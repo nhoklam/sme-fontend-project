@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, UserSquare2, Save } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { customerService } from '@/services/customer.service';
 import { Spinner } from '@/components/ui';
-import toast from 'react-hot-toast'; // ĐÃ THÊM IMPORT
+import toast from 'react-hot-toast';
 import type { Customer } from '@/types';
 
 interface CustomerModalProps {
@@ -57,7 +57,6 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
 
   if (!isOpen) return null;
 
-  // ĐÃ SỬA BƯỚC 1: BẮT LỖI TỪ BACKEND
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -79,78 +78,149 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] animate-slide-up">
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 transition-all">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[95vh] animate-scale-in border border-slate-100">
         
-        <div className="flex justify-between items-center p-5 border-b shrink-0">
-          <h2 className="text-lg font-bold text-gray-800">
-            {isEdit ? 'Cập nhật thông tin Khách hàng' : 'Thêm Khách hàng mới'}
-          </h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700 bg-gray-100 p-1.5 rounded-full">
+        {/* ── HEADER ── */}
+        <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-white/80 shrink-0">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-sm">
+              <UserSquare2 className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
+                {isEdit ? 'Cập nhật thông tin Khách hàng' : 'Thêm Khách hàng mới'}
+              </h2>
+              <p className="text-sm text-slate-500 font-medium mt-1">
+                {isEdit ? 'Chỉnh sửa thông tin liên hệ và cá nhân' : 'Tạo hồ sơ thành viên mới cho hệ thống'}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-all">
             <X className="w-5 h-5" />
           </button>
         </div>
 
+        {/* ── BODY ── */}
         {isEdit && loadingFresh ? (
-          <div className="flex-1 flex justify-center items-center p-12">
-            <Spinner size="lg" />
+          <div className="flex-1 flex flex-col justify-center items-center py-20 bg-slate-50/30">
+            <Spinner size="lg" className="text-indigo-600 mb-4" />
+            <p className="text-slate-500 font-medium">Đang tải dữ liệu...</p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-            <div className="p-5 space-y-4 overflow-y-auto custom-scrollbar flex-1">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar flex-1 bg-slate-50/30">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                
+                {/* Tên khách hàng */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Tên khách hàng <span className="text-red-500">*</span>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                    Tên khách hàng <span className="text-rose-500">*</span>
                   </label>
                   <input
                     required type="text" name="fullName"
                     value={formData.fullName || ''} onChange={handleChange}
-                    className="w-full border rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 outline-none"
-                    placeholder="Nguyễn Văn A" autoFocus={!isEdit}
+                    className="w-full px-4 py-3 bg-white border border-slate-200 text-slate-900 text-sm font-bold rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all shadow-sm"
+                    placeholder="VD: Nguyễn Văn A" autoFocus={!isEdit}
                   />
                 </div>
+                
+                {/* Số điện thoại */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Số điện thoại <span className="text-red-500">*</span>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                    Số điện thoại <span className="text-rose-500">*</span>
                   </label>
                   <input
                     required type="tel" name="phoneNumber"
                     value={formData.phoneNumber || ''} onChange={handleChange}
-                    className="w-full border rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 outline-none"
-                    placeholder="0987654321"
+                    className="w-full px-4 py-3 bg-white border border-slate-200 text-slate-900 text-sm font-mono font-bold tracking-wider rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all shadow-sm"
+                    placeholder="0987 654 321"
                   />
                 </div>
+                
+                {/* Email */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                  <input type="email" name="email" value={formData.email || ''} onChange={handleChange} className="w-full border rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="email@example.com" />
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Email liên hệ</label>
+                  <input 
+                    type="email" name="email" 
+                    value={formData.email || ''} onChange={handleChange} 
+                    className="w-full px-4 py-3 bg-white border border-slate-200 text-slate-900 text-sm font-medium rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all shadow-sm" 
+                    placeholder="email@domain.com" 
+                  />
                 </div>
+                
+                {/* Ngày sinh */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Ngày sinh</label>
-                  <input type="date" name="dateOfBirth" value={formData.dateOfBirth || ''} onChange={handleChange} className="w-full border rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 outline-none" />
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Ngày sinh</label>
+                  <input 
+                    type="date" name="dateOfBirth" 
+                    value={formData.dateOfBirth || ''} onChange={handleChange} 
+                    className="w-full px-4 py-3 bg-white border border-slate-200 text-slate-900 text-sm font-medium rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all shadow-sm uppercase" 
+                  />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Giới tính</label>
-                  <select name="gender" value={formData.gender || 'OTHER'} onChange={handleChange} className="w-full border rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 outline-none bg-white">
-                    <option value="MALE">Nam</option>
-                    <option value="FEMALE">Nữ</option>
-                    <option value="OTHER">Khác</option>
-                  </select>
-                </div>
+                
+                {/* Giới tính */}
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Địa chỉ</label>
-                  <input type="text" name="address" value={formData.address || ''} onChange={handleChange} className="w-full border rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Số nhà, Đường, Quận/Huyện, Tỉnh/TP" />
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Giới tính</label>
+                  <div className="flex gap-4">
+                    {['MALE', 'FEMALE', 'OTHER'].map((g) => (
+                      <label key={g} className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 border rounded-xl cursor-pointer transition-all ${
+                        formData.gender === g 
+                          ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-bold shadow-sm' 
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 font-medium'
+                      }`}>
+                        <input 
+                          type="radio" name="gender" value={g} 
+                          checked={formData.gender === g} onChange={handleChange} 
+                          className="hidden"
+                        />
+                        {g === 'MALE' ? 'Nam' : g === 'FEMALE' ? 'Nữ' : 'Khác'}
+                      </label>
+                    ))}
+                  </div>
                 </div>
+
+                {/* Địa chỉ */}
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Ghi chú nội bộ</label>
-                  <textarea name="notes" value={formData.notes || ''} onChange={handleChange} rows={3} className="w-full border rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500 outline-none resize-none" placeholder="Ghi chú thêm về sở thích, thói quen của khách hàng..."></textarea>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Địa chỉ hiện tại</label>
+                  <input 
+                    type="text" name="address" 
+                    value={formData.address || ''} onChange={handleChange} 
+                    className="w-full px-4 py-3 bg-white border border-slate-200 text-slate-900 text-sm font-medium rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all shadow-sm" 
+                    placeholder="Số nhà, Phố, Quận/Huyện, Tỉnh/TP" 
+                  />
+                </div>
+                
+                {/* Ghi chú */}
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Ghi chú nội bộ</label>
+                  <textarea 
+                    name="notes" 
+                    value={formData.notes || ''} onChange={handleChange} 
+                    rows={3} 
+                    className="w-full px-4 py-3 bg-white border border-slate-200 text-slate-900 text-sm font-medium rounded-xl focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all shadow-sm resize-none custom-scrollbar" 
+                    placeholder="Ghi chú về thói quen mua hàng, sở thích..."
+                  ></textarea>
                 </div>
               </div>
             </div>
-            <div className="p-5 border-t bg-gray-50 rounded-b-2xl flex justify-end gap-3 shrink-0">
-              <button type="button" onClick={onClose} disabled={isSubmitting} className="btn-secondary min-w-[100px]">Hủy bỏ</button>
-              <button type="submit" disabled={isSubmitting || !formData.fullName || !formData.phoneNumber} className="btn-primary min-w-[120px] flex justify-center">
-                {isSubmitting ? <Spinner size="sm" /> : (isEdit ? 'Lưu thay đổi' : 'Thêm mới')}
+            
+            {/* ── FOOTER ACTIONS ── */}
+            <div className="px-8 py-5 border-t border-slate-100 bg-white flex justify-end gap-4 shrink-0 rounded-b-3xl">
+              <button 
+                type="button" 
+                onClick={onClose} 
+                disabled={isSubmitting} 
+                className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+              >
+                Hủy bỏ
+              </button>
+              <button 
+                type="submit" 
+                disabled={isSubmitting || !formData.fullName || !formData.phoneNumber} 
+                className="flex items-center justify-center min-w-[140px] px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-[0_4px_12px_rgb(99,102,241,0.3)] hover:bg-indigo-700 disabled:opacity-50 disabled:shadow-none transition-all"
+              >
+                {isSubmitting ? <Spinner size="sm" className="text-white" /> : <><Save className="w-4 h-4 mr-2"/> {isEdit ? 'Lưu thay đổi' : 'Thêm mới'}</>}
               </button>
             </div>
           </form>

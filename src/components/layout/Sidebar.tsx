@@ -12,14 +12,14 @@ const navItems = [
   {
     label: 'BÁN HÀNG',
     items: [
-      { icon: ShoppingCart, label: 'Bán hàng (POS)', to: '/pos', roles: ['ROLE_ADMIN','ROLE_MANAGER','ROLE_CASHIER'] },
+      { icon: ShoppingCart, label: 'Bán hàng (POS)', to: '/pos', roles: ['ROLE_CASHIER'] },
     ]
   },
   {
     label: 'QUẢN LÝ',
     items: [
       { icon: LayoutDashboard, label: 'Tổng quan & AI', to: '/dashboard', roles: ['ROLE_ADMIN','ROLE_MANAGER'] },
-      { icon: ShoppingBag,     label: 'Đơn hàng',       to: '/orders',    roles: ['ROLE_ADMIN','ROLE_MANAGER','ROLE_CASHIER'] },
+      { icon: ShoppingBag,     label: 'Đơn hàng',       to: '/orders',    roles: ['ROLE_ADMIN','ROLE_MANAGER'] },
       { icon: Box,             label: 'Sản phẩm',       to: '/products',  roles: ['ROLE_ADMIN','ROLE_MANAGER'] },
       { icon: FolderTree,      label: 'Danh mục',       to: '/categories',roles: ['ROLE_ADMIN','ROLE_MANAGER'] },
     ]

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { DollarSign, TrendingDown, TrendingUp, AlertCircle, Calendar, Search, Plus, X, CheckCircle, Download, Printer, History, Landmark, Banknote, Wallet, FileText, CreditCard } from 'lucide-react';
+import { DollarSign, TrendingDown, TrendingUp, AlertCircle, Calendar, Search, Plus, X, CheckCircle, Download, Printer, History, Landmark, Banknote, Wallet, FileText, CreditCard, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { financeService } from '@/services/finance.service';
 import { warehouseService } from '@/services/warehouse.service';
@@ -13,6 +13,31 @@ import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth,
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 type TimeRange = 'today' | 'week' | 'month' | 'year' | '30days';
+
+// --- CẤU HÌNH TOOLTIP CHO BIỂU ĐỒ BAR CHART ---
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-slate-100/80 min-w-[180px]">
+        <p className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-3 border-b border-slate-100/80 pb-2">{label}</p>
+        <div className="space-y-2.5">
+          {payload.map((entry: any, index: number) => (
+            <div key={index} className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full ring-2 ring-white shadow-sm" style={{ backgroundColor: entry.color }} />
+                <span className="text-sm font-medium text-slate-500">{entry.name}:</span>
+              </div>
+              <span className={`text-sm font-black tracking-tight ${entry.name.includes('Thu') ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {formatCurrency(entry.value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
 
 // ─────────────────────────────────────────────────────────────────
 // COMPONENT 1: MODAL TẠO PHIẾU THU/CHI
@@ -53,66 +78,78 @@ function CashbookEntryModal({ onClose, onSaved }: { onClose: () => void, onSaved
   });
 
   return createPortal(
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 transition-all">
-      <div className="bg-white rounded-[24px] shadow-2xl w-full max-w-2xl animate-slide-up overflow-hidden border border-slate-100 flex flex-col max-h-[95vh]">
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-indigo-100 text-indigo-600 rounded-xl hidden sm:flex items-center justify-center">
-              <FileText className="w-5 h-5" />
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[90] flex items-center justify-center p-4 transition-all">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl animate-scale-in overflow-hidden border border-slate-100 flex flex-col max-h-[95vh]">
+        <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-white/80 backdrop-blur shrink-0">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-sm">
+              <FileText className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="font-bold text-lg text-slate-900">Tạo Phiếu Thu / Chi</h3>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">Ghi nhận giao dịch thủ công vào hệ thống</p>
+              <h3 className="font-extrabold text-xl text-slate-900 tracking-tight">Tạo Phiếu Thu / Chi</h3>
+              <p className="text-sm text-slate-500 font-medium mt-1">Ghi nhận giao dịch tài chính thủ công vào hệ thống</p>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors">
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
         
-        <div className="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1 bg-slate-50/30">
+        <div className="p-8 space-y-6 overflow-y-auto custom-scrollbar flex-1 bg-slate-50/30">
           {isAdmin() && (
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">Chi nhánh <span className="text-rose-500">*</span></label>
-              <select className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block p-3 transition-colors outline-none font-medium cursor-pointer appearance-none" value={form.warehouseId} onChange={e => setForm({ ...form, warehouseId: e.target.value })}>
-                <option value="">-- Chọn chi nhánh --</option>
-                {(warehouses ?? []).map((w: any) => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
-                ))}
-              </select>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Chi nhánh <span className="text-rose-500">*</span></label>
+              <div className="relative">
+                <select className="w-full bg-white border border-slate-200 text-slate-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block px-4 py-3.5 transition-colors outline-none font-bold cursor-pointer appearance-none shadow-sm" value={form.warehouseId} onChange={e => setForm({ ...form, warehouseId: e.target.value })}>
+                  <option value="">-- Chọn chi nhánh --</option>
+                  {(warehouses ?? []).map((w: any) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              </div>
             </div>
           )}
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">Loại phiếu</label>
-              <select className={`w-full border text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block p-3 transition-colors outline-none cursor-pointer appearance-none ${form.transactionType === 'IN' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`} value={form.transactionType} onChange={e => setForm({ ...form, transactionType: e.target.value })}>
-                <option value="IN">Phiếu Thu (+)</option>
-                <option value="OUT">Phiếu Chi (-)</option>
-              </select>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Loại phiếu</label>
+              <div className="relative">
+                <select className={`w-full text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block px-4 py-3.5 transition-colors outline-none cursor-pointer appearance-none shadow-sm ${form.transactionType === 'IN' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`} value={form.transactionType} onChange={e => setForm({ ...form, transactionType: e.target.value })}>
+                  <option value="IN">Phiếu Thu (+)</option>
+                  <option value="OUT">Phiếu Chi (-)</option>
+                </select>
+                <ChevronDown className={`absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${form.transactionType === 'IN' ? 'text-emerald-500' : 'text-rose-500'}`} />
+              </div>
             </div>
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">Loại quỹ</label>
-              <select className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block p-3 transition-colors outline-none font-medium cursor-pointer appearance-none" value={form.fundType} onChange={e => setForm({ ...form, fundType: e.target.value })}>
-                <option value="CASH_111">Tiền mặt (TK111)</option>
-                <option value="BANK_112">Ngân hàng (TK112)</option>
-              </select>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Loại quỹ</label>
+              <div className="relative">
+                <select className="w-full bg-white border border-slate-200 text-slate-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block px-4 py-3.5 transition-colors outline-none font-bold cursor-pointer appearance-none shadow-sm" value={form.fundType} onChange={e => setForm({ ...form, fundType: e.target.value })}>
+                  <option value="CASH_111">Tiền mặt (TK 111)</option>
+                  <option value="BANK_112">Ngân hàng (TK 112)</option>
+                </select>
+                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              </div>
             </div>
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">Loại chứng từ</label>
-              <select className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block p-3 transition-colors outline-none font-medium cursor-pointer appearance-none" value={form.referenceType} onChange={e => setForm({ ...form, referenceType: e.target.value })}>
-                <option value="MANUAL">Thủ công</option>
-                <option value="EXPENSE">Chi phí vận hành</option>
-                <option value="OTHER_INCOME">Thu nhập khác</option>
-              </select>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Loại chứng từ</label>
+              <div className="relative">
+                <select className="w-full bg-white border border-slate-200 text-slate-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block px-4 py-3.5 transition-colors outline-none font-bold cursor-pointer appearance-none shadow-sm" value={form.referenceType} onChange={e => setForm({ ...form, referenceType: e.target.value })}>
+                  <option value="MANUAL">Thủ công</option>
+                  <option value="EXPENSE">Chi phí vận hành</option>
+                  <option value="OTHER_INCOME">Thu nhập khác</option>
+                </select>
+                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              </div>
             </div>
           </div>
           
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Số tiền (VNĐ) <span className="text-rose-500">*</span></label>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Số tiền (VNĐ) <span className="text-rose-500">*</span></label>
             <input 
               type="number" 
-              className={`w-full bg-white border text-2xl font-black tracking-tight rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 block p-4 transition-colors outline-none ${form.transactionType === 'IN' ? 'text-emerald-600 border-emerald-200' : 'text-rose-600 border-rose-200'}`} 
+              className={`w-full bg-white border text-3xl font-black tracking-tight rounded-2xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 block p-5 transition-all outline-none shadow-inner ${form.transactionType === 'IN' ? 'text-emerald-600 border-emerald-100 focus:border-emerald-500 focus:ring-emerald-500/20' : 'text-rose-600 border-rose-100 focus:border-rose-500 focus:ring-rose-500/20'}`} 
               placeholder="Nhập số tiền..." 
               value={form.amount} 
               onChange={e => setForm({ ...form, amount: e.target.value })} 
@@ -121,17 +158,17 @@ function CashbookEntryModal({ onClose, onSaved }: { onClose: () => void, onSaved
           </div>
           
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Lý do / Mô tả <span className="text-rose-500">*</span></label>
-            <textarea className="w-full bg-white border border-slate-200 text-slate-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block p-3 transition-colors outline-none font-medium resize-none" rows={3} placeholder="Ví dụ: Nộp tiền điện nước, Tiền rác, v.v..." value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Lý do / Mô tả chi tiết <span className="text-rose-500">*</span></label>
+            <textarea className="w-full bg-white border border-slate-200 text-slate-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block p-4 transition-colors outline-none font-medium resize-none shadow-sm custom-scrollbar" rows={3} placeholder="Ví dụ: Nộp tiền điện nước tháng 10, Tiền rác, v.v..." value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
           </div>
         </div>
         
-        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 shrink-0">
-          <button onClick={onClose} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors">Hủy bỏ</button>
+        <div className="px-8 py-5 border-t border-slate-100 bg-white flex justify-end gap-3 shrink-0 rounded-b-3xl">
+          <button onClick={onClose} className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">Hủy bỏ</button>
           <button 
             onClick={() => mut.mutate()} 
             disabled={mut.isPending || !form.amount || !form.warehouseId || !form.description.trim()} 
-            className="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-70 flex items-center justify-center min-w-[130px]"
+            className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-[0_4px_12px_rgb(99,102,241,0.3)] disabled:opacity-50 disabled:shadow-none flex items-center justify-center min-w-[140px]"
           >
             {mut.isPending ? <Spinner size="sm" className="text-white"/> : 'Xác nhận tạo'}
           </button>
@@ -168,34 +205,34 @@ function PayDebtModal({ debt, onClose, onSaved }: { debt: any, onClose: () => vo
   });
 
   return createPortal(
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 transition-all">
-      <div className="bg-white rounded-[24px] shadow-2xl w-full max-w-md animate-slide-up overflow-hidden border border-slate-100 flex flex-col">
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[90] flex items-center justify-center p-4 transition-all">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md animate-scale-in overflow-hidden border border-slate-100 flex flex-col">
+        <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-white/80 backdrop-blur shrink-0">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center">
+            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-sm">
               <CreditCard className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-lg text-slate-900">Thanh toán Công nợ</h3>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">PO: <span className="font-mono font-bold text-indigo-600 uppercase">{debt.purchaseOrderCode || debt.purchaseOrderId?.slice(0,8)}</span></p>
+              <h3 className="font-bold text-xl text-slate-900 tracking-tight">Thanh toán nợ</h3>
+              <p className="text-sm text-slate-500 font-medium mt-1">PO: <span className="font-mono font-bold text-indigo-600 uppercase">{debt.purchaseOrderCode || debt.purchaseOrderId?.slice(0,8)}</span></p>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors">
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
         
-        <div className="p-6 space-y-5 bg-slate-50/30">
-          <div className="bg-rose-50 p-4 rounded-xl border border-rose-100 flex justify-between items-center shadow-sm">
-            <span className="text-sm font-bold text-rose-800">Dư nợ cần thanh toán:</span>
-            <span className="font-black tracking-tight text-rose-600 text-xl">{formatCurrency(debt.remainingAmount)}</span>
+        <div className="p-8 space-y-6 bg-slate-50/30">
+          <div className="bg-rose-50 p-5 rounded-2xl border border-rose-100 flex flex-col gap-1 shadow-sm">
+            <span className="text-[11px] font-bold text-rose-800 uppercase tracking-wider">Dư nợ cần thanh toán</span>
+            <span className="font-black tracking-tight text-rose-600 text-3xl">{formatCurrency(debt.remainingAmount)}</span>
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Số tiền trả (VNĐ) <span className="text-rose-500">*</span></label>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Số tiền trả (VNĐ) <span className="text-rose-500">*</span></label>
             <input 
               type="number" 
-              className="w-full bg-white border border-slate-200 text-slate-900 text-xl font-black tracking-tight rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 block p-3.5 transition-colors outline-none" 
+              className="w-full bg-white border border-slate-200 text-slate-900 text-2xl font-black tracking-tight rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 block p-4 transition-colors outline-none shadow-inner" 
               max={debt.remainingAmount} 
               value={form.amount} 
               onChange={e => setForm({ ...form, amount: e.target.value })} 
@@ -204,22 +241,25 @@ function PayDebtModal({ debt, onClose, onSaved }: { debt: any, onClose: () => vo
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Thanh toán từ quỹ <span className="text-rose-500">*</span></label>
-            <select className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block p-3.5 transition-colors outline-none font-medium cursor-pointer appearance-none" value={form.fundType} onChange={e => setForm({ ...form, fundType: e.target.value })}>
-              <option value="CASH_111">Tiền mặt (TK111)</option>
-              <option value="BANK_112">Ngân hàng (TK112)</option>
-            </select>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Thanh toán từ quỹ <span className="text-rose-500">*</span></label>
+            <div className="relative">
+              <select className="w-full bg-white border border-slate-200 text-slate-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block px-4 py-3.5 transition-colors outline-none cursor-pointer appearance-none shadow-sm" value={form.fundType} onChange={e => setForm({ ...form, fundType: e.target.value })}>
+                <option value="CASH_111">Tiền mặt (TK 111)</option>
+                <option value="BANK_112">Ngân hàng (TK 112)</option>
+              </select>
+              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            </div>
           </div>
           
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Ghi chú thanh toán</label>
-            <textarea className="w-full bg-white border border-slate-200 text-slate-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block p-3 transition-colors outline-none font-medium resize-none" rows={2} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} />
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Ghi chú thanh toán</label>
+            <textarea className="w-full bg-white border border-slate-200 text-slate-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block p-4 transition-colors outline-none font-medium resize-none shadow-sm" rows={2} value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} />
           </div>
         </div>
         
-        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 shrink-0">
-          <button onClick={onClose} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 transition-colors">Hủy bỏ</button>
-          <button onClick={() => mut.mutate()} disabled={mut.isPending || !form.amount || Number(form.amount) <= 0 || Number(form.amount) > debt.remainingAmount} className="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-70 flex items-center justify-center min-w-[140px]">
+        <div className="px-8 py-5 border-t border-slate-100 bg-white flex justify-end gap-3 shrink-0 rounded-b-3xl">
+          <button onClick={onClose} className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">Hủy bỏ</button>
+          <button onClick={() => mut.mutate()} disabled={mut.isPending || !form.amount || Number(form.amount) <= 0 || Number(form.amount) > debt.remainingAmount} className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-[0_4px_12px_rgb(99,102,241,0.3)] disabled:opacity-50 disabled:shadow-none flex items-center justify-center min-w-[150px]">
             {mut.isPending ? <Spinner size="sm" className="text-white"/> : 'Xác nhận thanh toán'}
           </button>
         </div>
@@ -253,50 +293,50 @@ function DebtHistoryModal({ debt, onClose }: { debt: any, onClose: () => void })
   const payments = historyData?.content?.filter((t: any) => t.referenceType === 'SUPPLIER_PAYMENT') || [];
 
   return createPortal(
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 transition-all">
-      <div className="bg-white rounded-[24px] shadow-2xl w-full max-w-3xl animate-slide-up flex flex-col max-h-[85vh] border border-slate-100 overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-indigo-100 text-indigo-600 rounded-xl hidden sm:flex items-center justify-center">
-              <History className="w-5 h-5" />
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[90] flex items-center justify-center p-4 transition-all">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl animate-scale-in flex flex-col max-h-[85vh] border border-slate-100 overflow-hidden">
+        <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-white/80 backdrop-blur shrink-0">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl hidden sm:flex items-center justify-center shadow-sm">
+              <History className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="font-bold text-lg text-slate-900">Lịch sử thanh toán</h3>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">PO: <span className="font-mono font-bold text-indigo-600 uppercase">{debt.purchaseOrderCode || debt.purchaseOrderId?.slice(0,8)}</span></p>
+              <h3 className="font-extrabold text-xl text-slate-900 tracking-tight">Lịch sử thanh toán nợ</h3>
+              <p className="text-sm text-slate-500 font-medium mt-1">PO: <span className="font-mono font-bold text-indigo-600 uppercase">{debt.purchaseOrderCode || debt.purchaseOrderId?.slice(0,8)}</span></p>
             </div>
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors">
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
         
-        <div className="p-2 overflow-y-auto flex-1 custom-scrollbar">
-          <div className="border border-slate-100 rounded-xl overflow-hidden m-4">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-slate-50 text-slate-500 uppercase text-[11px] font-bold border-b border-slate-100">
+        <div className="p-6 md:p-8 overflow-y-auto flex-1 custom-scrollbar bg-slate-50/30">
+          <div className="border border-slate-100 rounded-2xl overflow-hidden bg-white shadow-[0_4px_24px_rgb(0,0,0,0.02)]">
+            <table className="w-full text-sm text-left text-slate-600">
+              <thead className="bg-slate-50/50 uppercase text-[11px] font-bold border-b border-slate-100 tracking-wider text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">Ngày trả</th>
-                  <th className="px-4 py-3">Loại quỹ</th>
-                  <th className="px-4 py-3 text-right">Số tiền</th>
-                  <th className="px-4 py-3">Ghi chú / Mô tả</th>
+                  <th className="px-6 py-5">Ngày trả</th>
+                  <th className="px-6 py-5">Loại quỹ</th>
+                  <th className="px-6 py-5 text-right">Số tiền</th>
+                  <th className="px-6 py-5">Ghi chú / Mô tả</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50">
+              <tbody className="divide-y divide-slate-50/80">
                 {isLoading ? (
-                  <tr><td colSpan={4} className="text-center py-10"><Spinner size="md" className="mx-auto text-indigo-600"/></td></tr>
+                  <tr><td colSpan={4} className="text-center py-20"><Spinner size="md" className="mx-auto text-indigo-600"/></td></tr>
                 ) : payments.length === 0 ? (
-                  <tr><td colSpan={4} className="text-center py-10 text-slate-500 font-medium">Chưa có lịch sử thanh toán nào cho đơn này</td></tr>
+                  <tr><td colSpan={4} className="text-center py-20 text-slate-500 font-medium bg-slate-50/30">Chưa có lịch sử thanh toán nào cho đơn này.</td></tr>
                 ) : (
                   payments.map((p: any) => (
                     <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="px-4 py-3 text-slate-600 font-medium text-xs">{formatDateTime(p.createdAt)}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md border shadow-sm ${p.fundType === 'CASH_111' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                      <td className="px-6 py-4 text-slate-600 font-medium text-[13px]">{formatDateTime(p.createdAt)}</td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg border shadow-sm ${p.fundType === 'CASH_111' ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60' : 'bg-blue-50 text-blue-700 border-blue-200/60'}`}>
                           {p.fundType === 'CASH_111' ? 'Tiền mặt' : 'Ngân hàng'}
                         </span>
                       </td>
-                      <td className="px-4 py-3 font-black text-[15px] tracking-tight text-emerald-600 text-right">{formatCurrency(p.amount)}</td>
-                      <td className="px-4 py-3 text-[13px] text-slate-600 max-w-[200px] truncate" title={p.description}>{p.description}</td>
+                      <td className="px-6 py-4 font-black text-base tracking-tight text-emerald-600 text-right">{formatCurrency(p.amount)}</td>
+                      <td className="px-6 py-4 text-[13px] text-slate-700 max-w-[300px] truncate" title={p.description}>{p.description}</td>
                     </tr>
                   ))
                 )}
@@ -305,8 +345,8 @@ function DebtHistoryModal({ debt, onClose }: { debt: any, onClose: () => void })
           </div>
         </div>
         
-        <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3 shrink-0">
-          <button onClick={onClose} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-100 transition-colors">Đóng cửa sổ</button>
+        <div className="px-8 py-5 border-t border-slate-100 bg-white flex justify-end gap-3 shrink-0 rounded-b-3xl">
+          <button onClick={onClose} className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors shadow-sm">Đóng cửa sổ</button>
         </div>
       </div>
     </div>,
@@ -617,164 +657,170 @@ export default function FinancePage() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in max-w-[1600px] mx-auto pb-12">
+    <div className="min-h-screen bg-slate-50/30 text-slate-800 p-4 md:p-8 space-y-6 md:space-y-8 font-sans pb-16 max-w-[1600px] mx-auto relative">
       
       {/* ── HEADER ── */}
-      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white p-5 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50/50 rounded-full blur-3xl -z-10 -mr-20 -mt-20"></div>
-        
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 animate-fade-in">
         <div>
-          <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <Landmark className="w-6 h-6 text-indigo-600" /> Tài chính & Công nợ
-          </h2>
-          <p className="text-sm text-slate-500 mt-1 font-medium">Theo dõi dòng tiền thu chi và quản lý công nợ Nhà cung cấp</p>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Tài chính & Công nợ</h1>
+          <p className="text-sm text-slate-500 mt-1.5 font-medium">Theo dõi dòng tiền thu chi và quản lý công nợ Nhà cung cấp.</p>
         </div>
       </div>
 
       {/* ── THẺ TỔNG QUAN TÀI CHÍNH ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] flex items-center gap-4 transition-all hover:-translate-y-1 hover:shadow-md group">
-          <div className="p-3.5 bg-emerald-50 text-emerald-600 rounded-xl ring-4 ring-emerald-50/50 transition-transform group-hover:scale-110">
-            <Banknote className="w-6 h-6" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fade-in">
+        <div className="bg-white p-6 rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 flex items-center gap-5 transition-all hover:-translate-y-1 hover:shadow-lg group relative overflow-hidden">
+          <div className="absolute -right-4 -top-4 w-20 h-20 bg-emerald-50 rounded-full blur-2xl group-hover:bg-emerald-100 transition-colors duration-700"></div>
+          <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl shadow-sm border border-emerald-100/60 transition-transform group-hover:scale-110 relative z-10">
+            <Banknote className="w-7 h-7" />
           </div>
-          <div>
-            <p className="text-[13px] font-bold text-slate-500 uppercase tracking-wider mb-1">Quỹ Tiền mặt <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded ml-1 text-slate-400">TK111</span></p>
-            <p className="text-2xl font-black text-slate-900 tracking-tight">{formatCurrency(balance?.CASH_111 ?? 0)}</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] flex items-center gap-4 transition-all hover:-translate-y-1 hover:shadow-md group">
-          <div className="p-3.5 bg-blue-50 text-blue-600 rounded-xl ring-4 ring-blue-50/50 transition-transform group-hover:scale-110">
-            <Landmark className="w-6 h-6" />
-          </div>
-          <div>
-            <p className="text-[13px] font-bold text-slate-500 uppercase tracking-wider mb-1">Quỹ Ngân hàng <span className="font-mono text-[10px] bg-slate-100 px-1.5 py-0.5 rounded ml-1 text-slate-400">TK112</span></p>
-            <p className="text-2xl font-black text-slate-900 tracking-tight">{formatCurrency(balance?.BANK_112 ?? 0)}</p>
+          <div className="relative z-10">
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Quỹ Tiền mặt <span className="font-mono bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded ml-1.5 text-slate-500">TK 111</span></p>
+            <p className="text-3xl font-black text-slate-900 tracking-tight">{formatCurrency(balance?.CASH_111 ?? 0)}</p>
           </div>
         </div>
 
-        <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] flex items-center gap-4 transition-all hover:-translate-y-1 hover:shadow-md group">
-          <div className="p-3.5 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-600/30 transition-transform group-hover:scale-110">
-            <Wallet className="w-6 h-6" />
+        <div className="bg-white p-6 rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 flex items-center gap-5 transition-all hover:-translate-y-1 hover:shadow-lg group relative overflow-hidden">
+          <div className="absolute -right-4 -top-4 w-20 h-20 bg-blue-50 rounded-full blur-2xl group-hover:bg-blue-100 transition-colors duration-700"></div>
+          <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl shadow-sm border border-blue-100/60 transition-transform group-hover:scale-110 relative z-10">
+            <Landmark className="w-7 h-7" />
           </div>
-          <div>
-            <p className="text-[13px] font-bold text-indigo-600/80 uppercase tracking-wider mb-1">Tổng Quỹ Hiện Có</p>
-            <p className="text-2xl font-black text-indigo-700 tracking-tight">{formatCurrency((balance?.CASH_111 ?? 0) + (balance?.BANK_112 ?? 0))}</p>
+          <div className="relative z-10">
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Quỹ Ngân hàng <span className="font-mono bg-slate-50 border border-slate-100 px-1.5 py-0.5 rounded ml-1.5 text-slate-500">TK 112</span></p>
+            <p className="text-3xl font-black text-slate-900 tracking-tight">{formatCurrency(balance?.BANK_112 ?? 0)}</p>
+          </div>
+        </div>
+
+        <div className="bg-indigo-600 p-6 rounded-3xl shadow-[0_8px_30px_rgb(99,102,241,0.2)] border border-indigo-500 flex items-center gap-5 transition-all hover:-translate-y-1 hover:shadow-xl group relative overflow-hidden">
+          <div className="absolute -right-4 -top-4 w-32 h-32 bg-white/10 rounded-full blur-3xl pointer-events-none"></div>
+          <div className="p-4 bg-white/10 text-white rounded-2xl shadow-inner border border-white/10 transition-transform group-hover:scale-110 relative z-10">
+            <Wallet className="w-7 h-7" />
+          </div>
+          <div className="relative z-10">
+            <p className="text-[11px] font-bold text-indigo-200 uppercase tracking-wider mb-1">Tổng Quỹ Hiện Có</p>
+            <p className="text-3xl font-black text-white tracking-tight drop-shadow-sm">{formatCurrency((balance?.CASH_111 ?? 0) + (balance?.BANK_112 ?? 0))}</p>
           </div>
         </div>
       </div>
 
-      {/* ── ĐIỀU HƯỚNG TABS ── */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="flex border-b border-slate-100 px-2 sm:px-6 bg-slate-50/50 overflow-x-auto custom-scrollbar">
+      {/* ── ĐIỀU HƯỚNG TABS & MAIN CONTENT ── */}
+      <div className="bg-white rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 overflow-hidden animate-fade-in flex flex-col min-h-[500px]">
+        
+        {/* Tabs Header */}
+        <div className="flex border-b border-slate-100 px-6 sm:px-8 bg-slate-50/30 overflow-x-auto custom-scrollbar shrink-0 gap-6">
           <button 
             onClick={() => setTab('cashbook')}
-            className={`py-4 px-4 font-bold text-[14px] flex items-center gap-2 transition-all relative whitespace-nowrap ${tab === 'cashbook' ? 'text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+            className={`py-5 font-bold text-[15px] flex items-center gap-2 transition-all relative whitespace-nowrap ${tab === 'cashbook' ? 'text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
           >
             <DollarSign className="w-4 h-4" /> Sổ Quỹ Giao Dịch
-            {tab === 'cashbook' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-t-full"></div>}
+            {tab === 'cashbook' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-t-full shadow-[0_0_8px_rgb(99,102,241,0.8)]"></div>}
           </button>
           <button 
             onClick={() => setTab('debts')}
-            className={`py-4 px-4 font-bold text-[14px] flex items-center gap-2 transition-all relative whitespace-nowrap ${tab === 'debts' ? 'text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+            className={`py-5 font-bold text-[15px] flex items-center gap-2 transition-all relative whitespace-nowrap ${tab === 'debts' ? 'text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
           >
             <AlertCircle className="w-4 h-4" /> Công nợ Nhà cung cấp
-            {tab === 'debts' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-t-full"></div>}
+            {tab === 'debts' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-t-full shadow-[0_0_8px_rgb(99,102,241,0.8)]"></div>}
           </button>
         </div>
 
         {/* ── NỘI DUNG TAB SỔ QUỸ ── */}
         {tab === 'cashbook' && (
-          <div className="flex flex-col animate-fade-in">
+          <div className="flex flex-col flex-1 animate-fade-in">
             {/* Bộ lọc Sổ Quỹ */}
-            <div className="p-5 border-b border-slate-100 flex flex-col gap-4">
+            <div className="p-6 md:p-8 border-b border-slate-100 flex flex-col gap-6 bg-white shrink-0">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <h3 className="font-bold text-slate-900 hidden sm:flex items-center gap-2 text-lg">
-                  Lịch sử Thu Chi
+                <h3 className="font-extrabold text-slate-900 hidden lg:flex items-center gap-2 text-xl tracking-tight">
+                  <TrendingUp className="w-5 h-5 text-indigo-500" /> Biến động dòng tiền
                 </h3>
-                <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-                  <button onClick={handleExportExcel} className="px-4 py-2 rounded-xl text-sm font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors shadow-sm flex items-center justify-center gap-2 flex-1 sm:flex-none">
+                <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
+                  <button onClick={handleExportExcel} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-700 bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-colors shadow-sm flex items-center justify-center gap-2 flex-1 sm:flex-none">
                     <Download className="w-4 h-4" /> <span className="hidden sm:inline">Xuất Data</span>
                   </button>
-                  <button onClick={() => setShowEntryModal(true)} className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-sm flex items-center justify-center gap-2 flex-1 sm:flex-none">
+                  <button onClick={() => setShowEntryModal(true)} className="px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-[0_4px_12px_rgb(99,102,241,0.3)] flex items-center justify-center gap-2 flex-1 sm:flex-none">
                     <Plus className="w-4 h-4" /> <span className="hidden sm:inline">Tạo Phiếu Mới</span>
                   </button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
                 <div className="relative">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input 
-                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm font-medium rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block pl-10 p-2.5 transition-colors outline-none disabled:bg-slate-100 disabled:text-slate-400" 
+                    className="w-full bg-white border border-slate-200 text-slate-900 text-sm font-medium rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block pl-11 pr-4 py-3 transition-colors outline-none disabled:bg-slate-50 disabled:text-slate-400 shadow-sm" 
                     placeholder={filterRef !== 'ALL' ? "Đang lọc nguồn..." : "Mô tả, mã chứng từ..."} 
                     value={keywordTxn} 
                     onChange={e => setKeywordTxn(e.target.value)} 
                     disabled={filterRef !== 'ALL'}
                   />
                 </div>
-                <select className="w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm font-medium rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block px-3 p-2.5 transition-colors outline-none cursor-pointer appearance-none" value={filterFund} onChange={e => setFilterFund(e.target.value)}>
-                  <option value="ALL">Tất cả Loại quỹ</option>
-                  <option value="CASH_111">Tiền mặt (TK111)</option>
-                  <option value="BANK_112">Ngân hàng (TK112)</option>
-                </select>
-                <select className="w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm font-medium rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block px-3 p-2.5 transition-colors outline-none cursor-pointer appearance-none" value={filterType} onChange={e => setFilterType(e.target.value)}>
-                  <option value="ALL">Tất cả Thu / Chi</option>
-                  <option value="IN">Chỉ lọc Thu (+)</option>
-                  <option value="OUT">Chỉ lọc Chi (-)</option>
-                </select>
-                <select className="w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm font-medium rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block px-3 p-2.5 transition-colors outline-none cursor-pointer appearance-none" value={filterRef} onChange={e => { setFilterRef(e.target.value); if (e.target.value !== 'ALL') setKeywordTxn(''); }}>
-                  <option value="ALL">Tất cả Nguồn gốc</option>
-                  <option value="INVOICE">Hóa đơn POS</option>
-                  <option value="SALE_ONLINE">Đơn Online</option>
-                  <option value="PURCHASE_ORDER">Nhập kho NCC</option>
-                  <option value="SUPPLIER_PAYMENT">Trả nợ NCC</option>
-                  <option value="COD_RECONCILIATION">Đối soát COD</option>
-                  <option value="EXPENSE">Chi phí vận hành</option>
-                  <option value="OTHER_INCOME">Thu nhập khác</option>
-                  <option value="MANUAL">Thủ công</option>
-                </select>
                 <div className="relative">
-                  <Calendar className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                  <select value={timeRange} onChange={(e) => setTimeRange(e.target.value as TimeRange)} className="w-full bg-slate-50 border border-slate-200 text-slate-700 text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block pl-10 p-2.5 transition-colors outline-none cursor-pointer appearance-none">
+                  <select className="w-full bg-white border border-slate-200 text-slate-700 text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block px-4 py-3 transition-colors outline-none cursor-pointer appearance-none shadow-sm" value={filterFund} onChange={e => setFilterFund(e.target.value)}>
+                    <option value="ALL">Tất cả Loại quỹ</option>
+                    <option value="CASH_111">Tiền mặt (TK 111)</option>
+                    <option value="BANK_112">Ngân hàng (TK 112)</option>
+                  </select>
+                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                </div>
+                <div className="relative">
+                  <select className={`w-full border text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block px-4 py-3 transition-colors outline-none cursor-pointer appearance-none shadow-sm ${filterType === 'ALL' ? 'bg-white border-slate-200 text-slate-700' : filterType === 'IN' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`} value={filterType} onChange={e => setFilterType(e.target.value)}>
+                    <option value="ALL">Tất cả Thu / Chi</option>
+                    <option value="IN">Chỉ lọc Thu (+)</option>
+                    <option value="OUT">Chỉ lọc Chi (-)</option>
+                  </select>
+                  <ChevronDown className={`absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none ${filterType === 'ALL' ? 'text-slate-400' : filterType === 'IN' ? 'text-emerald-500' : 'text-rose-500'}`} />
+                </div>
+                <div className="relative">
+                  <select className="w-full bg-white border border-slate-200 text-slate-700 text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block px-4 py-3 transition-colors outline-none cursor-pointer appearance-none shadow-sm" value={filterRef} onChange={e => { setFilterRef(e.target.value); if (e.target.value !== 'ALL') setKeywordTxn(''); }}>
+                    <option value="ALL">Tất cả Nguồn gốc</option>
+                    <option value="INVOICE">Hóa đơn POS</option>
+                    <option value="SALE_ONLINE">Đơn Online</option>
+                    <option value="PURCHASE_ORDER">Nhập kho NCC</option>
+                    <option value="SUPPLIER_PAYMENT">Trả nợ NCC</option>
+                    <option value="COD_RECONCILIATION">Đối soát COD</option>
+                    <option value="EXPENSE">Chi phí vận hành</option>
+                    <option value="OTHER_INCOME">Thu nhập khác</option>
+                    <option value="MANUAL">Thủ công</option>
+                  </select>
+                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                </div>
+                <div className="relative">
+                  <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-500 pointer-events-none" />
+                  <select value={timeRange} onChange={(e) => setTimeRange(e.target.value as TimeRange)} className="w-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block pl-11 pr-10 py-3 transition-colors outline-none cursor-pointer appearance-none shadow-sm">
                     <option value="today">Hôm nay</option>
                     <option value="week">Tuần này</option>
                     <option value="month">Tháng này</option>
                     <option value="year">Năm nay</option>
                     <option value="30days">30 ngày qua</option>
                   </select>
+                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-500 pointer-events-none" />
                 </div>
               </div>
             </div>
 
             {/* Biểu đồ Sổ Quỹ */}
             {chartData.length > 0 && !loadingTxn && (
-              <div className="p-6 border-b border-slate-100 bg-slate-50/50 hidden lg:block">
-                <h4 className="text-sm font-extrabold text-slate-700 mb-6 flex items-center gap-2 uppercase tracking-wider">
-                  <TrendingUp className="w-4 h-4 text-indigo-500" /> Biểu đồ Giao dịch
-                </h4>
-                <div className="h-[280px] w-full">
+              <div className="px-8 py-6 border-b border-slate-100 bg-white hidden lg:block shrink-0">
+                <div className="h-[250px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                    <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} dy={10} />
+                      <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#94a3b8', fontWeight: 600 }} dy={10} />
                       <YAxis 
                         yAxisId="left" 
                         axisLine={false} 
                         tickLine={false} 
-                        tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} 
+                        tick={{ fontSize: 12, fill: '#94a3b8', fontWeight: 600 }} 
                         tickFormatter={(value) => `${value / 1000000}M`} 
                         dx={-10}
                       />
                       <Tooltip
                         cursor={{ fill: '#f8fafc' }}
-                        formatter={(value: number) => formatCurrency(value)}
-                        labelStyle={{ color: '#0f172a', fontWeight: 'bold', marginBottom: '8px' }}
-                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
+                        content={<CustomTooltip />}
                       />
-                      <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '13px', fontWeight: 'bold', color: '#475569' }} iconType="circle" />
-                      <Bar yAxisId="left" dataKey="Thu" name="Tiền Thu (+)" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={45} />
-                      <Bar yAxisId="left" dataKey="Chi" name="Tiền Chi (-)" fill="#f43f5e" radius={[4, 4, 0, 0]} maxBarSize={45} />
+                      <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '13px', fontWeight: 'bold', color: '#64748b' }} iconType="circle" />
+                      <Bar yAxisId="left" dataKey="Thu" name="Tiền Thu (+)" fill="#10b981" radius={[6, 6, 0, 0]} maxBarSize={30} />
+                      <Bar yAxisId="left" dataKey="Chi" name="Tiền Chi (-)" fill="#f43f5e" radius={[6, 6, 0, 0]} maxBarSize={30} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -782,52 +828,52 @@ export default function FinancePage() {
             )}
 
             {/* Bảng dữ liệu Sổ Quỹ */}
-            <div className="relative min-h-[300px] flex flex-col">
+            <div className="relative flex-1 flex flex-col bg-slate-50/30">
               {loadingTxn || refetchingTxn ? (
                 <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-10 flex items-center justify-center">
                   <Spinner size="lg" className="text-indigo-600" />
                 </div>
               ) : null}
-              <div className="overflow-x-auto custom-scrollbar p-2 flex-1">
-                <table className="w-full text-sm text-left min-w-[900px]">
-                  <thead className="text-[11px] text-slate-500 uppercase font-bold bg-white/90 backdrop-blur sticky top-0 z-10 border-b border-slate-100">
+              <div className="overflow-x-auto custom-scrollbar flex-1">
+                <table className="w-full text-sm text-left min-w-[900px] text-slate-600">
+                  <thead className="text-[11px] text-slate-500 uppercase font-bold bg-white/90 backdrop-blur sticky top-0 z-10 border-b border-slate-100 tracking-wider">
                     <tr>
-                      <th className="px-5 py-4">Thời gian</th>
-                      <th className="px-5 py-4 text-center">Quỹ</th>
-                      <th className="px-5 py-4 text-center">Loại</th>
-                      <th className="px-5 py-4">Mã tham chiếu</th>
-                      <th className="px-5 py-4">Mô tả giao dịch</th>
-                      <th className="px-5 py-4 text-right">Số tiền</th>
-                      <th className="px-5 py-4 text-right">Tác vụ</th>
+                      <th className="px-6 py-5">Thời gian</th>
+                      <th className="px-6 py-5 text-center">Quỹ</th>
+                      <th className="px-6 py-5 text-center">Loại</th>
+                      <th className="px-6 py-5">Mã tham chiếu</th>
+                      <th className="px-6 py-5">Mô tả giao dịch</th>
+                      <th className="px-6 py-5 text-right">Số tiền</th>
+                      <th className="px-6 py-5 text-right w-24">Tác vụ</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-50">
+                  <tbody className="divide-y divide-slate-50/80">
                     {paginatedTxn.length === 0 && !loadingTxn ? (
-                      <tr><td colSpan={7} className="py-16 text-center text-slate-500 font-medium">Không tìm thấy giao dịch nào phù hợp.</td></tr>
+                      <tr><td colSpan={7} className="py-24 text-center"><EmptyState icon={FileText} title="Không có giao dịch nào" description="Thử thay đổi bộ lọc hoặc khoảng thời gian." /></td></tr>
                     ) : (
                       paginatedTxn.map((txn: any) => (
-                        <tr key={txn.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="px-5 py-4 text-slate-600 font-medium text-xs whitespace-nowrap">{formatDateTime(txn.createdAt)}</td>
-                          <td className="px-5 py-4 text-center">
-                            <span className={`inline-flex px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md border shadow-sm ${txn.fundType === 'CASH_111' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                        <tr key={txn.id} className="hover:bg-white transition-colors group">
+                          <td className="px-6 py-4 text-slate-500 font-semibold text-xs whitespace-nowrap">{formatDateTime(txn.createdAt)}</td>
+                          <td className="px-6 py-4 text-center">
+                            <span className={`inline-flex px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg border shadow-sm ${txn.fundType === 'CASH_111' ? 'bg-emerald-50 text-emerald-700 border-emerald-100/60' : 'bg-blue-50 text-blue-700 border-blue-100/60'}`}>
                               {txn.fundType === 'CASH_111' ? 'Tiền mặt' : 'Ngân hàng'}
                             </span>
                           </td>
-                          <td className="px-5 py-4 text-center">
+                          <td className="px-6 py-4 text-center">
                             {txn.transactionType === 'IN'
-                              ? <span className="inline-flex items-center justify-center gap-1 bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase"><TrendingUp className="w-3 h-3" /> Thu</span>
-                              : <span className="inline-flex items-center justify-center gap-1 bg-rose-100 text-rose-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase"><TrendingDown className="w-3 h-3" /> Chi</span>
+                              ? <span className="inline-flex items-center justify-center gap-1 bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider shadow-sm border border-emerald-200/50"><TrendingUp className="w-3.5 h-3.5" /> Thu</span>
+                              : <span className="inline-flex items-center justify-center gap-1 bg-rose-100 text-rose-700 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider shadow-sm border border-rose-200/50"><TrendingDown className="w-3.5 h-3.5" /> Chi</span>
                             }
                           </td>
-                          <td className="px-5 py-4 font-mono text-[12px] font-semibold text-slate-500">{txn.referenceType}</td>
-                          <td className="px-5 py-4 text-[13px] font-medium text-slate-800 max-w-[250px] truncate" title={txn.description}>{txn.description}</td>
-                          <td className={`px-5 py-4 text-right font-black tracking-tight text-[15px] ${txn.transactionType === 'IN' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          <td className="px-6 py-4 font-mono text-[13px] font-bold text-slate-700">{txn.referenceType}</td>
+                          <td className="px-6 py-4 text-[14px] font-medium text-slate-800 max-w-[300px] truncate" title={txn.description}>{txn.description}</td>
+                          <td className={`px-6 py-4 text-right font-black tracking-tight text-base ${txn.transactionType === 'IN' ? 'text-emerald-600' : 'text-rose-600'}`}>
                             {txn.transactionType === 'IN' ? '+' : '-'}{formatCurrency(txn.amount)}
                           </td>
-                          <td className="px-5 py-4 text-right">
+                          <td className="px-6 py-4 text-right">
                             <button 
                               onClick={() => handlePrintReceipt(txn)}
-                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors shadow-sm border border-transparent hover:border-indigo-100 ml-auto"
+                              className="inline-flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 bg-white hover:text-indigo-600 hover:bg-indigo-50 transition-colors shadow-sm border border-slate-100 hover:border-indigo-100 opacity-0 group-hover:opacity-100 ml-auto"
                               title="In phiếu"
                             >
                               <Printer className="w-4 h-4" />
@@ -840,7 +886,7 @@ export default function FinancePage() {
                 </table>
               </div>
               {totalPagesTxn > 1 && (
-                <div className="border-t border-slate-100 bg-slate-50/50 p-4">
+                <div className="border-t border-slate-100 bg-white p-4 shrink-0 rounded-b-3xl">
                   <Pagination page={pageTxn} totalPages={totalPagesTxn} totalElements={totalElementsTxn} size={PAGE_SIZE} onPageChange={setPageTxn} />
                 </div>
               )}
@@ -850,76 +896,74 @@ export default function FinancePage() {
 
         {/* ── NỘI DUNG TAB CÔNG NỢ NCC ── */}
         {tab === 'debts' && (
-          <div className="flex flex-col animate-fade-in">
+          <div className="flex flex-col flex-1 animate-fade-in">
             {/* Bộ lọc Công Nợ */}
-            <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center">
+            <div className="p-6 md:p-8 border-b border-slate-100 flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center bg-white shrink-0">
               <div className="relative w-full sm:max-w-md">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input 
-                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm font-medium rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block pl-10 p-2.5 transition-colors outline-none" 
-                  placeholder="Tìm Tên NCC, PO, trạng thái nợ..." 
+                  className="w-full bg-white border border-slate-200 text-slate-900 text-sm font-medium rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 block pl-11 pr-4 py-3.5 transition-colors outline-none shadow-sm" 
+                  placeholder="Tìm Tên NCC, mã PO, trạng thái nợ..." 
                   value={keywordDebt} 
                   onChange={e => setKeywordDebt(e.target.value)} 
                 />
               </div>
-              <button onClick={handleExportExcel} className="px-4 py-2.5 rounded-xl text-sm font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors shadow-sm flex items-center justify-center gap-2 w-full sm:w-auto shrink-0">
-                <Download className="w-4 h-4" /> Xuất Excel
+              <button onClick={handleExportExcel} className="px-6 py-3.5 rounded-xl text-sm font-bold text-slate-700 bg-slate-50 border border-slate-200 hover:bg-slate-100 transition-colors shadow-sm flex items-center justify-center gap-2 w-full sm:w-auto shrink-0">
+                <Download className="w-4 h-4" /> Xuất Báo Cáo
               </button>
             </div>
 
             {/* Bảng dữ liệu Công Nợ */}
-            <div className="relative min-h-[300px] flex flex-col">
+            <div className="relative flex-1 flex flex-col bg-slate-50/30">
               {loadingDebts || refetchingDebts ? (
                 <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-10 flex items-center justify-center">
                   <Spinner size="lg" className="text-indigo-600" />
                 </div>
               ) : null}
-              <div className="overflow-x-auto custom-scrollbar p-2 flex-1">
-                <table className="w-full text-sm text-left min-w-[1000px]">
-                  <thead className="text-[11px] text-slate-500 uppercase font-bold bg-white/90 backdrop-blur sticky top-0 z-10 border-b border-slate-100">
+              <div className="overflow-x-auto custom-scrollbar flex-1">
+                <table className="w-full text-sm text-left min-w-[1000px] text-slate-600">
+                  <thead className="text-[11px] text-slate-500 uppercase font-bold bg-white/90 backdrop-blur sticky top-0 z-10 border-b border-slate-100 tracking-wider">
                     <tr>
-                      <th className="px-5 py-4">Nhà cung cấp</th>
-                      <th className="px-5 py-4">Chi nhánh nhập</th>
-                      <th className="px-5 py-4 text-center">Mã Phiếu (PO)</th>
-                      <th className="px-5 py-4 text-right">Tổng phát sinh</th>
-                      <th className="px-5 py-4 text-right text-emerald-600">Đã trả</th>
-                      <th className="px-5 py-4 text-right text-rose-600">Còn nợ lại</th>
-                      <th className="px-5 py-4 text-center">Trạng thái</th>
-                      <th className="px-5 py-4 text-center">Hạn thanh toán</th>
-                      <th className="px-5 py-4 text-right">Tác vụ</th>
+                      <th className="px-6 py-5">Nhà cung cấp</th>
+                      <th className="px-6 py-5">Chi nhánh</th>
+                      <th className="px-6 py-5 text-center">Mã Phiếu (PO)</th>
+                      <th className="px-6 py-5 text-right">Tổng phát sinh</th>
+                      <th className="px-6 py-5 text-right text-emerald-600">Đã trả</th>
+                      <th className="px-6 py-5 text-right text-rose-600">Còn nợ lại</th>
+                      <th className="px-6 py-5 text-center">Trạng thái</th>
+                      <th className="px-6 py-5 text-right w-40">Tác vụ</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-50">
+                  <tbody className="divide-y divide-slate-50/80">
                     {paginatedDebts.length === 0 && !loadingDebts ? (
-                      <tr><td colSpan={9} className="py-16 text-center text-slate-500 font-medium">Không tìm thấy công nợ nào.</td></tr>
+                      <tr><td colSpan={8} className="py-24 text-center"><EmptyState icon={AlertCircle} title="Không có công nợ nào" description="Tuyệt vời! Không có khoản nợ nào cần thanh toán." /></td></tr>
                     ) : (
                       paginatedDebts.map((d: any) => (
-                        <tr key={d.id} className="hover:bg-slate-50/80 transition-colors group">
-                          <td className="px-5 py-4 font-bold text-slate-800 text-[13px]">
+                        <tr key={d.id} className="hover:bg-white transition-colors group">
+                          <td className="px-6 py-4 font-extrabold text-slate-900 text-[14px]">
                             {supplierMap.get(d.supplierId) || <span className="text-[11px] font-medium text-slate-400 italic">Không rõ NCC</span>}
                           </td>
-                          <td className="px-5 py-4">
+                          <td className="px-6 py-4">
                             <span className="font-semibold text-slate-600 bg-slate-50 border border-slate-100 px-2.5 py-1 rounded-md text-[11px] uppercase tracking-wider">
                               {d.warehouseName || 'Không rõ'}
                             </span>
                           </td>
-                          <td className="px-5 py-4 text-center font-mono font-bold text-indigo-600 text-[12px]">
+                          <td className="px-6 py-4 text-center font-mono font-bold text-indigo-600 text-[13px]">
                             {d.purchaseOrderCode || (d.purchaseOrderId ? d.purchaseOrderId.slice(0,8) + '...' : '-')}
                           </td>
-                          <td className="px-5 py-4 text-right font-semibold text-slate-700 tracking-tight">{formatCurrency(d.totalDebt)}</td>
-                          <td className="px-5 py-4 text-right font-semibold text-emerald-600 tracking-tight">{formatCurrency(d.paidAmount)}</td>
-                          <td className="px-5 py-4 text-right font-black text-rose-600 tracking-tight text-[15px]">{formatCurrency(d.remainingAmount)}</td>
-                          <td className="px-5 py-4 text-center">
-                            <span className={`inline-flex px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-md border shadow-sm ${d.status === 'PAID' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : d.status === 'PARTIAL' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                          <td className="px-6 py-4 text-right font-semibold text-slate-700 tracking-tight text-[15px]">{formatCurrency(d.totalDebt)}</td>
+                          <td className="px-6 py-4 text-right font-bold text-emerald-600 tracking-tight text-[15px]">{formatCurrency(d.paidAmount)}</td>
+                          <td className="px-6 py-4 text-right font-black text-rose-600 tracking-tight text-[16px]">{formatCurrency(d.remainingAmount)}</td>
+                          <td className="px-6 py-4 text-center">
+                            <span className={`inline-flex px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg border shadow-sm ${d.status === 'PAID' ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60' : d.status === 'PARTIAL' ? 'bg-amber-50 text-amber-700 border-amber-200/60' : 'bg-rose-50 text-rose-700 border-rose-200/60'}`}>
                               {d.status === 'PAID' ? 'Đã Thanh Toán' : d.status === 'PARTIAL' ? 'Trả Một Phần' : 'Chưa Thanh Toán'}
                             </span>
                           </td>
-                          <td className="px-5 py-4 text-center text-slate-500 text-xs font-medium">{d.dueDate ?? '-'}</td>
-                          <td className="px-5 py-4 text-right">
-                            <div className="flex justify-end gap-2 items-center opacity-80 group-hover:opacity-100 transition-opacity">
+                          <td className="px-6 py-4 text-right">
+                            <div className="flex justify-end gap-2 items-center opacity-0 group-hover:opacity-100 transition-opacity">
                               <button 
                                 onClick={() => setDebtHistory(d)}
-                                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 bg-slate-50 hover:bg-slate-200 hover:text-slate-800 transition-colors shadow-sm"
+                                className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 bg-white border border-slate-100 hover:bg-slate-50 hover:text-slate-800 transition-colors shadow-sm"
                                 title="Xem lịch sử trả nợ"
                               >
                                 <History className="w-4 h-4" />
@@ -928,10 +972,10 @@ export default function FinancePage() {
                               {d.status !== 'PAID' && (
                                 <button 
                                   onClick={() => setDebtToPay(d)}
-                                  className="h-8 px-3 rounded-lg text-xs font-bold transition-colors flex items-center justify-center text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 shadow-sm"
+                                  className="h-8 px-4 rounded-lg text-xs font-bold transition-colors flex items-center justify-center text-blue-700 bg-white border border-blue-200 hover:bg-blue-50 shadow-sm"
                                   title="Thanh toán nợ"
                                 >
-                                  <CheckCircle className="w-3.5 h-3.5 mr-1" /> Trả nợ
+                                  Trả nợ
                                 </button>
                               )}
                             </div>
@@ -943,7 +987,7 @@ export default function FinancePage() {
                 </table>
               </div>
               {totalPagesDebt > 1 && (
-                <div className="border-t border-slate-100 bg-slate-50/50 p-4">
+                <div className="border-t border-slate-100 bg-white p-4 shrink-0 rounded-b-3xl">
                   <Pagination page={pageDebt} totalPages={totalPagesDebt} totalElements={filteredDebts.length} size={PAGE_SIZE} onPageChange={setPageDebt} />
                 </div>
               )}

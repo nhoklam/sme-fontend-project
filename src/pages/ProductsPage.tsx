@@ -66,7 +66,7 @@ function ProductForm({ product, onClose, onSaved, categories }: { product?: Prod
     supplierId: product?.supplierId ?? '',
     retailPrice: String(product?.retailPrice ?? ''),
     wholesalePrice: String(product?.wholesalePrice ?? ''),
-    unit: product?.unit ?? 'Cái',
+    unit: product?.unit ?? 'Cuốn', // Mặc định cho sách
     weight: String(product?.weight ?? ''), 
     description: product?.description ?? '',
     imageUrl: product?.imageUrl ?? '',
@@ -114,7 +114,7 @@ function ProductForm({ product, onClose, onSaved, categories }: { product?: Prod
           hasSupplierId: true, 
           retailPrice: parseFloat(form.retailPrice) || 0,
           wholesalePrice: parseFloat(form.wholesalePrice) || undefined,
-          unit: form.unit.trim() || 'Cái',
+          unit: form.unit.trim() || 'Cuốn',
           weight: parseFloat(form.weight) || undefined, 
           description: form.description.trim(),
           imageUrl: form.imageUrl,
@@ -129,7 +129,7 @@ function ProductForm({ product, onClose, onSaved, categories }: { product?: Prod
           supplierId: form.supplierId || undefined,
           retailPrice: parseFloat(form.retailPrice) || 0,
           wholesalePrice: parseFloat(form.wholesalePrice) || undefined,
-          unit: form.unit.trim() || 'Cái',
+          unit: form.unit.trim() || 'Cuốn',
           weight: parseFloat(form.weight) || undefined, 
           description: form.description.trim(),
           imageUrl: form.imageUrl,
@@ -172,7 +172,7 @@ function ProductForm({ product, onClose, onSaved, categories }: { product?: Prod
           <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white/80">
             <div>
               <h3 className="font-bold text-xl text-slate-900 tracking-tight">{isEdit ? 'Cập nhật Sản phẩm' : 'Thêm Sản phẩm mới'}</h3>
-              <p className="text-sm text-slate-500 mt-1 font-medium">Cung cấp đầy đủ thông tin để quản lý hiệu quả</p>
+              <p className="text-sm text-slate-500 mt-1 font-medium">Cung cấp đầy đủ thông tin để quản lý sách hiệu quả</p>
             </div>
             <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-all">
               <X className="w-5 h-5" />
@@ -186,8 +186,8 @@ function ProductForm({ product, onClose, onSaved, categories }: { product?: Prod
               <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-50 pb-3"><Box className="w-4 h-4 text-indigo-500" /> Thông tin cơ bản</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Tên sản phẩm *</label>
-                  <input className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.name} onChange={e => f('name', e.target.value)} placeholder="Tên sản phẩm..." autoFocus />
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Tên sản phẩm (Tựa sách) *</label>
+                  <input className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.name} onChange={e => f('name', e.target.value)} placeholder="Nhập tên sách..." autoFocus />
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Mã Barcode / ISBN *</label>
@@ -197,7 +197,7 @@ function ProductForm({ product, onClose, onSaved, categories }: { product?: Prod
                       value={form.isbnBarcode} 
                       onChange={e => f('isbnBarcode', e.target.value)} 
                       disabled={isEdit} 
-                      placeholder="Mã vạch..." 
+                      placeholder="Mã ISBN..." 
                     />
                     {/* Nút quét mã chỉ hiển thị khi thêm mới */}
                     {!isEdit && (
@@ -224,13 +224,13 @@ function ProductForm({ product, onClose, onSaved, categories }: { product?: Prod
                   <ChevronDown className="absolute right-3 top-[34px] w-4 h-4 text-slate-400 pointer-events-none" />
                 </div>
                 <div className="relative">
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Nhà cung cấp</label>
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Nhà cung cấp / NXB</label>
                   <AsyncSelect
                       cacheOptions
                       defaultOptions 
                       loadOptions={loadSupplierOptions}
-                      placeholder="Gõ để tìm Nhà cung cấp..."
-                      noOptionsMessage={() => "Không tìm thấy nhà cung cấp nào"}
+                      placeholder="Gõ để tìm NCC / NXB..."
+                      noOptionsMessage={() => "Không tìm thấy thông tin"}
                       value={currentSupplier}
                       onChange={(selectedOption: any) => {
                           setCurrentSupplier(selectedOption);
@@ -260,7 +260,7 @@ function ProductForm({ product, onClose, onSaved, categories }: { product?: Prod
                  
                  <div className="grid grid-cols-2 gap-4">
                    <div>
-                     <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Giá bán lẻ *</label>
+                     <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Giá bán lẻ (Bìa) *</label>
                      <input type="number" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-indigo-600 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.retailPrice} onChange={e => f('retailPrice', e.target.value)} />
                    </div>
                    <div>
@@ -272,12 +272,12 @@ function ProductForm({ product, onClose, onSaved, categories }: { product?: Prod
                  <div className="grid grid-cols-2 gap-4">
                    <div>
                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Mã SKU</label>
-                     <input className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-slate-700 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.sku} onChange={e => f('sku', e.target.value)} placeholder="VD: SP-001" />
+                     <input className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-slate-700 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.sku} onChange={e => f('sku', e.target.value)} placeholder="VD: BOOK-001" />
                    </div>
                    <div>
                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Đơn vị / Trọng lượng</label>
                      <div className="flex gap-2">
-                        <input className="w-1/2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:border-indigo-500 outline-none transition-all" value={form.unit} onChange={e => f('unit', e.target.value)} placeholder="Cái" />
+                        <input className="w-1/2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:border-indigo-500 outline-none transition-all" value={form.unit} onChange={e => f('unit', e.target.value)} placeholder="Cuốn" />
                         <input type="number" className="w-1/2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:border-indigo-500 outline-none transition-all" value={form.weight} onChange={e => f('weight', e.target.value)} placeholder="Gram" />
                      </div>
                    </div>
@@ -285,17 +285,17 @@ function ProductForm({ product, onClose, onSaved, categories }: { product?: Prod
               </div>
 
               <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_24px_rgb(0,0,0,0.02)] flex flex-col">
-                <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-50 pb-3 mb-4"><ImagePlus className="w-4 h-4 text-indigo-500" /> Hình ảnh đại diện</h4>
+                <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-50 pb-3 mb-4"><ImagePlus className="w-4 h-4 text-indigo-500" /> Hình ảnh bìa sách</h4>
                 <div className="flex-1 flex flex-col items-center justify-center">
                   {form.imageUrl ? (
-                    <div className="relative w-36 h-36 rounded-2xl overflow-hidden border border-slate-200 shadow-sm group">
+                    <div className="relative w-36 aspect-[2/3] rounded-xl overflow-hidden border border-slate-200 shadow-md group">
                       <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-500" />
                       <button type="button" onClick={() => f('imageUrl', '')} className="absolute top-2 right-2 bg-white/90 backdrop-blur rounded-full w-8 h-8 flex items-center justify-center text-rose-500 hover:bg-rose-50 hover:text-rose-600 shadow-sm transition-all opacity-0 group-hover:opacity-100">✕</button>
                     </div>
                   ) : (
-                    <label className={`w-full h-full min-h-[144px] flex flex-col items-center justify-center gap-3 border-2 border-dashed border-slate-200 rounded-2xl p-4 cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-300 transition-all ${uploadingImage ? 'opacity-50 pointer-events-none' : ''}`}>
+                    <label className={`w-full h-full min-h-[200px] flex flex-col items-center justify-center gap-3 border-2 border-dashed border-slate-200 rounded-2xl p-4 cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-300 transition-all ${uploadingImage ? 'opacity-50 pointer-events-none' : ''}`}>
                       {uploadingImage ? <Spinner size="md" className="text-indigo-500" /> : <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center"><ImageIcon className="w-6 h-6 text-slate-400" /></div>}
-                      <span className="text-sm font-medium text-slate-500">{uploadingImage ? 'Đang xử lý ảnh...' : 'Nhấn để tải ảnh lên (Tỉ lệ 1:1)'}</span>
+                      <span className="text-sm font-medium text-slate-500 text-center">{uploadingImage ? 'Đang xử lý ảnh...' : 'Nhấn để tải bìa sách lên (Tỉ lệ 2:3)'}</span>
                       <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploadingImage} />
                     </label>
                   )}
@@ -304,8 +304,8 @@ function ProductForm({ product, onClose, onSaved, categories }: { product?: Prod
             </div>
 
             <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_24px_rgb(0,0,0,0.02)]">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Mô tả sản phẩm</label>
-              <textarea className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all resize-none custom-scrollbar" rows={3} value={form.description} onChange={e => f('description', e.target.value)} placeholder="Nhập mô tả chi tiết, thành phần, công dụng..." />
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Giới thiệu sách (Mô tả)</label>
+              <textarea className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all resize-none custom-scrollbar" rows={3} value={form.description} onChange={e => f('description', e.target.value)} placeholder="Nhập tóm tắt nội dung, tác giả..." />
             </div>
           </div>
 
@@ -410,7 +410,7 @@ export default function ProductsPage() {
     let inStock = 0, lowStock = 0, outStock = 0;
     const catMap: Record<string, number> = {};
 
-    prods.forEach(p => {
+    prods.forEach((p: ProductResponse) => {
       const qty = p.availableQuantity || 0;
       if (qty === 0) outStock++;
       else if (qty < 10) lowStock++;
@@ -440,7 +440,7 @@ export default function ProductsPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Danh mục Sản phẩm</h1>
-          <p className="text-sm text-slate-500 mt-1.5 font-medium">Quản lý kho hàng, thông tin hàng hóa và định giá.</p>
+          <p className="text-sm text-slate-500 mt-1.5 font-medium">Quản lý sách, thông tin hàng hóa và định giá.</p>
         </div>
         <button onClick={() => { setEditing(undefined); setShowForm(true); }} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-semibold shadow-[0_4px_12px_rgb(0,0,0,0.1)] transition-all">
           <Plus className="w-5 h-5" /> Thêm sản phẩm
@@ -454,7 +454,7 @@ export default function ProductsPage() {
           <div className="relative z-10 flex items-center gap-4 mb-4">
             <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100/50 text-indigo-600 flex items-center justify-center shadow-sm"><Package className="w-6 h-6"/></div>
             <div>
-              <p className="text-sm font-semibold text-slate-500">Mã hàng hệ thống</p>
+              <p className="text-sm font-semibold text-slate-500">Đầu sách hệ thống</p>
               <h3 className="text-3xl font-black text-slate-900 mt-0.5 tracking-tight">{data?.totalElements || 0}</h3>
             </div>
           </div>
@@ -477,7 +477,7 @@ export default function ProductsPage() {
             ) : <div className="absolute inset-0 flex items-center justify-center text-xs font-medium text-slate-400 bg-slate-50 rounded-full border border-slate-100 border-dashed">Trống</div>}
           </div>
           <div className="w-1/2 space-y-3">
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Cơ cấu danh mục</p>
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Cơ cấu thể loại</p>
             <div className="space-y-2.5">
               {dashboardStats.categoryData.slice(0, 3).map((cat, i) => (
                 <div key={i} className="flex items-center justify-between text-sm">
@@ -521,7 +521,7 @@ export default function ProductsPage() {
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
               <input 
                 type="text" 
-                placeholder="Tìm tên, ISBN, SKU..." 
+                placeholder="Tìm tựa sách, ISBN, SKU..." 
                 className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
                 value={keyword}
                 onChange={e => { setKeyword(e.target.value); setPage(0); }}
@@ -535,8 +535,8 @@ export default function ProductsPage() {
                  value={selectedCategoryId} 
                  onChange={(e) => { setSelectedCategoryId(e.target.value); setPage(0); }}
                >
-                 <option value="">Tất cả danh mục</option>
-                 {categories?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                 <option value="">Tất cả thể loại</option>
+                 {categories?.map((c: Category) => <option key={c.id} value={c.id}>{c.name}</option>)}
                </select>
                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
             </div>
@@ -548,7 +548,7 @@ export default function ProductsPage() {
                 onChange={(e) => { setSupplierFilter(e.target.value); setPage(0); }}
                 className="w-full pl-4 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none cursor-pointer"
               >
-                <option value="">Tất cả Nhà Cung Cấp</option>
+                <option value="">Tất cả NXB / NCC</option>
                 {suppliers?.map((supplier: any) => (
                   <option key={supplier.id} value={supplier.id}>
                     {supplier.name}
@@ -565,8 +565,8 @@ export default function ProductsPage() {
                  onChange={(e) => { setIsActiveFilter(e.target.value); setPage(0); }}
                >
                  <option value="">Mọi trạng thái</option>
-                 <option value="true">Đang kinh doanh</option>
-                 <option value="false">Ngừng kinh doanh</option>
+                 <option value="true">Đang bán</option>
+                 <option value="false">Ngừng bán</option>
                </select>
                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
             </div>
@@ -579,9 +579,9 @@ export default function ProductsPage() {
           <table className="w-full text-left text-sm text-slate-600">
             <thead className="bg-slate-50/50 border-b border-slate-100 text-slate-500 uppercase text-[11px] tracking-wider font-bold">
               <tr>
-                <th className="px-6 py-5">Sản phẩm</th>
-                <th className="px-6 py-5">Mã Barcode / SKU</th>
-                <th className="px-6 py-5">Phân loại & NCC</th>
+                <th className="px-6 py-5">Tựa sách / Sản phẩm</th>
+                <th className="px-6 py-5">Mã ISBN / SKU</th>
+                <th className="px-6 py-5">Thể loại & NXB</th>
                 <th className="px-6 py-5 text-right">Giá bán (VNĐ)</th>
                 <th className="px-6 py-5 text-right">Tồn kho</th>
                 <th className="px-6 py-5 text-center w-36">Thao tác</th>
@@ -593,7 +593,7 @@ export default function ProductsPage() {
                   <td colSpan={6} className="py-24">
                     <EmptyState 
                       icon={Package} 
-                      title="Chưa có dữ liệu sản phẩm" 
+                      title="Chưa có dữ liệu sách/sản phẩm" 
                       description="Hãy thêm sản phẩm mới hoặc điều chỉnh lại bộ lọc tìm kiếm." 
                       action={<button onClick={() => setShowForm(true)} className="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-bold transition-all shadow-sm">Thêm mới ngay</button>} 
                     />
@@ -623,7 +623,7 @@ export default function ProductsPage() {
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-1">
                         <span className="font-bold text-indigo-600 text-[13px]">{p.categoryName ?? 'Chưa phân loại'}</span>
-                        <span className="text-[11px] font-medium text-slate-500 truncate max-w-[150px] uppercase tracking-wide">{getSupplierName(p.supplierId) || 'Đa NCC'}</span>
+                        <span className="text-[11px] font-medium text-slate-500 truncate max-w-[150px] uppercase tracking-wide">{getSupplierName(p.supplierId) || 'Đa NXB'}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
@@ -685,7 +685,7 @@ export default function ProductsPage() {
           <div className="fixed inset-y-0 right-0 w-full max-w-md bg-[#fcfcfd] shadow-2xl z-50 flex flex-col border-l border-slate-100 animate-slide-in-right">
             
             <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-white/90 backdrop-blur-md sticky top-0 z-10">
-              <h2 className="text-xl font-bold text-slate-900 tracking-tight">Hồ sơ Sản phẩm</h2>
+              <h2 className="text-xl font-bold text-slate-900 tracking-tight">Hồ sơ Sách</h2>
               <button onClick={() => setViewingProduct(null)} className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-full transition-all bg-white shadow-sm border border-slate-100">
                 <X className="w-5 h-5" />
               </button>
@@ -693,16 +693,26 @@ export default function ProductsPage() {
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
               
-              <div className="w-full aspect-[4/3] rounded-3xl bg-white border border-slate-100 overflow-hidden relative shadow-[0_4px_20px_rgb(0,0,0,0.03)] group">
+              <div className="w-full bg-slate-100/50 rounded-3xl border border-slate-100 p-8 flex justify-center items-center relative shadow-inner group">
                 {viewingProduct.imageUrl ? (
-                  <img src={viewingProduct.imageUrl} alt={viewingProduct.name} className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-700" />
+                  <div className="w-48 aspect-[2/3] rounded-md shadow-lg overflow-hidden border border-white relative z-10">
+                     <img src={viewingProduct.imageUrl} alt={viewingProduct.name} className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-700" />
+                  </div>
                 ) : (
-                  <ImageIcon className="w-12 h-12 text-slate-200 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                  <div className="w-48 aspect-[2/3] rounded-md shadow-sm border border-slate-200 bg-white flex items-center justify-center relative z-10">
+                     <ImageIcon className="w-10 h-10 text-slate-300" />
+                  </div>
                 )}
-                <div className="absolute top-4 right-4 flex flex-col gap-2">
-                  {!viewingProduct.isActive ? <span className="bg-slate-900/90 text-white backdrop-blur px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider">Ngừng bán</span> :
-                    (viewingProduct.availableQuantity || 0) > 10 ? <span className="bg-emerald-500/90 text-white backdrop-blur px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 uppercase tracking-wider"><CheckCircle2 className="w-3.5 h-3.5"/> Đang bán</span> :
-                    <span className="bg-rose-500/90 text-white backdrop-blur px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 uppercase tracking-wider"><AlertCircle className="w-3.5 h-3.5"/> Thiếu hàng</span>
+                {/* Blur background for effect if image exists */}
+                {viewingProduct.imageUrl && (
+                   <div className="absolute inset-0 opacity-20 blur-2xl group-hover:opacity-30 transition-opacity duration-700">
+                      <img src={viewingProduct.imageUrl} alt="" className="w-full h-full object-cover" />
+                   </div>
+                )}
+                <div className="absolute top-4 right-4 flex flex-col gap-2 z-20">
+                  {!viewingProduct.isActive ? <span className="bg-slate-900/90 text-white backdrop-blur px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm">Ngừng bán</span> :
+                    (viewingProduct.availableQuantity || 0) > 10 ? <span className="bg-emerald-500/90 text-white backdrop-blur px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 uppercase tracking-wider shadow-sm"><CheckCircle2 className="w-3.5 h-3.5"/> Đang bán</span> :
+                    <span className="bg-rose-500/90 text-white backdrop-blur px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 uppercase tracking-wider shadow-sm"><AlertCircle className="w-3.5 h-3.5"/> Thiếu hàng</span>
                   }
                 </div>
               </div>
@@ -730,7 +740,7 @@ export default function ProductsPage() {
                 </div>
                 <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)] flex flex-col">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Tồn kho</p>
-                  <p className="text-2xl font-black text-slate-900">{viewingProduct.availableQuantity || 0} <span className="text-sm font-semibold text-slate-500 ml-0.5">{viewingProduct.unit || 'SP'}</span></p>
+                  <p className="text-2xl font-black text-slate-900">{viewingProduct.availableQuantity || 0} <span className="text-sm font-semibold text-slate-500 ml-0.5">{viewingProduct.unit || 'Cuốn'}</span></p>
                   <div className="mt-auto pt-3 border-t border-slate-50 space-y-1.5">
                     <p className="text-[11px] text-slate-500 flex justify-between"><span>Chờ giao:</span> <span className="font-bold text-slate-700">0</span></p>
                     <p className="text-[11px] text-slate-500 flex justify-between"><span>Đang nhập:</span> <span className="font-bold text-indigo-600">0</span></p>
@@ -746,13 +756,13 @@ export default function ProductsPage() {
                 <ul className="space-y-3 text-[13px]">
                   <li className="flex justify-between items-center"><span className="text-slate-500 font-medium">Đơn vị tính</span><span className="font-bold text-slate-800 bg-slate-50 px-2 py-0.5 rounded">{viewingProduct.unit || '---'}</span></li>
                   <li className="flex justify-between items-center"><span className="text-slate-500 font-medium">Trọng lượng</span><span className="font-bold text-slate-800 bg-slate-50 px-2 py-0.5 rounded">{viewingProduct.weight ? `${viewingProduct.weight} gram` : '---'}</span></li>
-                  <li className="flex justify-between items-center"><span className="text-slate-500 font-medium">Nhà cung cấp</span><span className="font-bold text-slate-800 text-right max-w-[180px] truncate">{getSupplierName(viewingProduct.supplierId) || 'Đa nhà cung cấp'}</span></li>
+                  <li className="flex justify-between items-center"><span className="text-slate-500 font-medium">Nhà xuất bản / NCC</span><span className="font-bold text-slate-800 text-right max-w-[180px] truncate">{getSupplierName(viewingProduct.supplierId) || 'Nhiều Nguồn'}</span></li>
                 </ul>
               </div>
 
               {viewingProduct.description && (
                 <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)]">
-                  <h4 className="font-bold text-slate-900 text-sm mb-3">Mô tả sản phẩm</h4>
+                  <h4 className="font-bold text-slate-900 text-sm mb-3">Giới thiệu sách (Mô tả)</h4>
                   <p className="text-sm text-slate-600 font-medium leading-relaxed whitespace-pre-wrap">{viewingProduct.description}</p>
                 </div>
               )}
