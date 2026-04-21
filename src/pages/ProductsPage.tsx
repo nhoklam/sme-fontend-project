@@ -2,13 +2,13 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   Plus, Search, Edit, Package, Eye, EyeOff, ImagePlus, Filter, 
-  X, CheckCircle2, AlertCircle, Box, ImageIcon, ChevronDown, PackagePlus
+  X, CheckCircle2, AlertCircle, Box, ImageIcon, ChevronDown, PackagePlus, ScanLine
 } from 'lucide-react';
 import { 
   PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer,
   BarChart, Bar, XAxis, YAxis
 } from 'recharts';
-import AsyncSelect from 'react-select/async'; // ĐÃ THÊM THƯ VIỆN BƯỚC 2
+import AsyncSelect from 'react-select/async'; 
 import { productService } from '@/services/product.service';
 import { uploadService } from '@/services/upload.service';
 import { categoryService, Category } from '@/services/category.service';
@@ -18,8 +18,9 @@ import { PageLoader, EmptyState, Pagination, Spinner } from '@/components/ui';
 import toast from 'react-hot-toast';
 import type { ProductResponse, CreateProductRequest, UpdateProductRequest } from '@/types';
 
-// ĐÃ THÊM: Import component Điều chỉnh kho nhanh (Bước 3)
+// Component Điều chỉnh kho nhanh & Quét mã vạch
 import InventoryAdjustModal from './InventoryAdjustModal'; 
+import BarcodeScanner from '@/components/BarcodeScanner';
 
 // ==========================================
 // 1. TÙY CHỈNH MÀU SẮC & TOOLTIP BIỂU ĐỒ 
@@ -50,6 +51,9 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 function ProductForm({ product, onClose, onSaved, categories }: { product?: ProductResponse; onClose: () => void; onSaved: () => void; categories: Category[]; }) {
   const isEdit = !!product;
   const [uploadingImage, setUploadingImage] = useState(false);
+  
+  // State quản lý Bật/Tắt Camera quét mã
+  const [isScanning, setIsScanning] = useState(false);
 
   // Lấy dữ liệu tên Nhà Cung cấp hiện tại để hiển thị sẵn trong AsyncSelect khi Edit
   const [currentSupplier, setCurrentSupplier] = useState<{value: string, label: string} | null>(null);
@@ -81,7 +85,7 @@ function ProductForm({ product, onClose, onSaved, categories }: { product?: Prod
     }
   }, [isEdit, product]);
 
-  // ĐÃ SỬA (BƯỚC 2): HÀM LOAD DỮ LIỆU BẤT ĐỒNG BỘ CHO REACT-SELECT
+  // HÀM LOAD DỮ LIỆU BẤT ĐỒNG BỘ CHO REACT-SELECT
   const loadSupplierOptions = async (inputValue: string) => {
       try {
           const response = await supplierService.getAll({ 
@@ -160,146 +164,176 @@ function ProductForm({ product, onClose, onSaved, categories }: { product?: Prod
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4 transition-opacity">
-      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col animate-scale-in border border-slate-100 overflow-hidden">
-        
-        {/* Header Modal */}
-        <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white/80">
-          <div>
-            <h3 className="font-bold text-xl text-slate-900 tracking-tight">{isEdit ? 'Cập nhật Sản phẩm' : 'Thêm Sản phẩm mới'}</h3>
-            <p className="text-sm text-slate-500 mt-1 font-medium">Cung cấp đầy đủ thông tin để quản lý hiệu quả</p>
-          </div>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-all">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Body Modal */}
-        <div className="p-8 space-y-6 overflow-y-auto flex-1 custom-scrollbar bg-slate-50/30">
+    <>
+      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4 transition-opacity">
+        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col animate-scale-in border border-slate-100 overflow-hidden">
           
-          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_24px_rgb(0,0,0,0.02)] space-y-5">
-            <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-50 pb-3"><Box className="w-4 h-4 text-indigo-500" /> Thông tin cơ bản</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Tên sản phẩm *</label>
-                <input className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.name} onChange={e => f('name', e.target.value)} placeholder="Tên sản phẩm..." autoFocus />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Mã Barcode / ISBN *</label>
-                <input className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed" value={form.isbnBarcode} onChange={e => f('isbnBarcode', e.target.value)} disabled={isEdit} placeholder="Mã vạch..." />
-              </div>
+          {/* Header Modal */}
+          <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white/80">
+            <div>
+              <h3 className="font-bold text-xl text-slate-900 tracking-tight">{isEdit ? 'Cập nhật Sản phẩm' : 'Thêm Sản phẩm mới'}</h3>
+              <p className="text-sm text-slate-500 mt-1 font-medium">Cung cấp đầy đủ thông tin để quản lý hiệu quả</p>
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div className="relative">
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Phân loại *</label>
-                <select className="w-full pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all appearance-none cursor-pointer" value={form.categoryId} onChange={e => f('categoryId', e.target.value)}>
-                  <option value="">-- Chọn danh mục --</option>
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <ChevronDown className="absolute right-3 top-[34px] w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
-              <div className="relative">
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Nhà cung cấp</label>
-                
-                {/* ĐÃ SỬA (BƯỚC 2): THAY THẾ BẰNG ASYNC SELECT */}
-                <AsyncSelect
-                    cacheOptions
-                    defaultOptions 
-                    loadOptions={loadSupplierOptions}
-                    placeholder="Gõ để tìm Nhà cung cấp..."
-                    noOptionsMessage={() => "Không tìm thấy nhà cung cấp nào"}
-                    value={currentSupplier}
-                    onChange={(selectedOption: any) => {
-                        setCurrentSupplier(selectedOption);
-                        setForm({ ...form, supplierId: selectedOption ? selectedOption.value : '' });
-                    }}
-                    isClearable={true}
-                    className="text-sm font-medium"
-                    styles={{
-                        control: (baseStyles, state) => ({
-                            ...baseStyles,
-                            backgroundColor: state.isFocused ? '#ffffff' : '#f8fafc',
-                            borderColor: state.isFocused ? '#6366f1' : '#e2e8f0',
-                            boxShadow: state.isFocused ? '0 0 0 2px rgba(99, 102, 241, 0.2)' : 'none',
-                            borderRadius: '0.75rem',
-                            padding: '2px',
-                            transition: 'all 0.2s ease'
-                        }),
-                    }}
-                />
-              </div>
-            </div>
+            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-all">
+              <X className="w-5 h-5" />
+            </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Body Modal */}
+          <div className="p-8 space-y-6 overflow-y-auto flex-1 custom-scrollbar bg-slate-50/30">
+            
             <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_24px_rgb(0,0,0,0.02)] space-y-5">
-               <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-50 pb-3"><Package className="w-4 h-4 text-indigo-500" /> Bán hàng & Lưu kho</h4>
-               
-               <div className="grid grid-cols-2 gap-4">
-                 <div>
-                   <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Giá bán lẻ *</label>
-                   <input type="number" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-indigo-600 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.retailPrice} onChange={e => f('retailPrice', e.target.value)} />
-                 </div>
-                 <div>
-                   <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Giá sỉ (Tùy chọn)</label>
-                   <input type="number" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-teal-600 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.wholesalePrice} onChange={e => f('wholesalePrice', e.target.value)} />
-                 </div>
-               </div>
+              <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-50 pb-3"><Box className="w-4 h-4 text-indigo-500" /> Thông tin cơ bản</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Tên sản phẩm *</label>
+                  <input className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.name} onChange={e => f('name', e.target.value)} placeholder="Tên sản phẩm..." autoFocus />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Mã Barcode / ISBN *</label>
+                  <div className="relative">
+                    <input 
+                      className="w-full pl-4 pr-12 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed" 
+                      value={form.isbnBarcode} 
+                      onChange={e => f('isbnBarcode', e.target.value)} 
+                      disabled={isEdit} 
+                      placeholder="Mã vạch..." 
+                    />
+                    {/* Nút quét mã chỉ hiển thị khi thêm mới */}
+                    {!isEdit && (
+                      <button
+                        type="button"
+                        onClick={() => setIsScanning(true)}
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center bg-indigo-100 text-indigo-600 hover:bg-indigo-200 rounded-lg transition-colors"
+                        title="Quét mã bằng Camera"
+                      >
+                        <ScanLine className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
 
-               <div className="grid grid-cols-2 gap-4">
-                 <div>
-                   <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Mã SKU</label>
-                   <input className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-slate-700 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.sku} onChange={e => f('sku', e.target.value)} placeholder="VD: SP-001" />
-                 </div>
-                 <div>
-                   <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Đơn vị / Trọng lượng</label>
-                   <div className="flex gap-2">
-                      <input className="w-1/2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:border-indigo-500 outline-none transition-all" value={form.unit} onChange={e => f('unit', e.target.value)} placeholder="Cái" />
-                      <input type="number" className="w-1/2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:border-indigo-500 outline-none transition-all" value={form.weight} onChange={e => f('weight', e.target.value)} placeholder="Gram" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <div className="relative">
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Phân loại *</label>
+                  <select className="w-full pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all appearance-none cursor-pointer" value={form.categoryId} onChange={e => f('categoryId', e.target.value)}>
+                    <option value="">-- Chọn danh mục --</option>
+                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-[34px] w-4 h-4 text-slate-400 pointer-events-none" />
+                </div>
+                <div className="relative">
+                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Nhà cung cấp</label>
+                  <AsyncSelect
+                      cacheOptions
+                      defaultOptions 
+                      loadOptions={loadSupplierOptions}
+                      placeholder="Gõ để tìm Nhà cung cấp..."
+                      noOptionsMessage={() => "Không tìm thấy nhà cung cấp nào"}
+                      value={currentSupplier}
+                      onChange={(selectedOption: any) => {
+                          setCurrentSupplier(selectedOption);
+                          setForm({ ...form, supplierId: selectedOption ? selectedOption.value : '' });
+                      }}
+                      isClearable={true}
+                      className="text-sm font-medium"
+                      styles={{
+                          control: (baseStyles, state) => ({
+                              ...baseStyles,
+                              backgroundColor: state.isFocused ? '#ffffff' : '#f8fafc',
+                              borderColor: state.isFocused ? '#6366f1' : '#e2e8f0',
+                              boxShadow: state.isFocused ? '0 0 0 2px rgba(99, 102, 241, 0.2)' : 'none',
+                              borderRadius: '0.75rem',
+                              padding: '2px',
+                              transition: 'all 0.2s ease'
+                          }),
+                      }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_24px_rgb(0,0,0,0.02)] space-y-5">
+                 <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-50 pb-3"><Package className="w-4 h-4 text-indigo-500" /> Bán hàng & Lưu kho</h4>
+                 
+                 <div className="grid grid-cols-2 gap-4">
+                   <div>
+                     <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Giá bán lẻ *</label>
+                     <input type="number" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-indigo-600 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.retailPrice} onChange={e => f('retailPrice', e.target.value)} />
+                   </div>
+                   <div>
+                     <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Giá sỉ (Tùy chọn)</label>
+                     <input type="number" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-teal-600 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.wholesalePrice} onChange={e => f('wholesalePrice', e.target.value)} />
                    </div>
                  </div>
-               </div>
-            </div>
 
-            <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_24px_rgb(0,0,0,0.02)] flex flex-col">
-              <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-50 pb-3 mb-4"><ImagePlus className="w-4 h-4 text-indigo-500" /> Hình ảnh đại diện</h4>
-              <div className="flex-1 flex flex-col items-center justify-center">
-                {form.imageUrl ? (
-                  <div className="relative w-36 h-36 rounded-2xl overflow-hidden border border-slate-200 shadow-sm group">
-                    <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-500" />
-                    <button type="button" onClick={() => f('imageUrl', '')} className="absolute top-2 right-2 bg-white/90 backdrop-blur rounded-full w-8 h-8 flex items-center justify-center text-rose-500 hover:bg-rose-50 hover:text-rose-600 shadow-sm transition-all opacity-0 group-hover:opacity-100">✕</button>
-                  </div>
-                ) : (
-                  <label className={`w-full h-full min-h-[144px] flex flex-col items-center justify-center gap-3 border-2 border-dashed border-slate-200 rounded-2xl p-4 cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-300 transition-all ${uploadingImage ? 'opacity-50 pointer-events-none' : ''}`}>
-                    {uploadingImage ? <Spinner size="md" className="text-indigo-500" /> : <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center"><ImageIcon className="w-6 h-6 text-slate-400" /></div>}
-                    <span className="text-sm font-medium text-slate-500">{uploadingImage ? 'Đang xử lý ảnh...' : 'Nhấn để tải ảnh lên (Tỉ lệ 1:1)'}</span>
-                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploadingImage} />
-                  </label>
-                )}
+                 <div className="grid grid-cols-2 gap-4">
+                   <div>
+                     <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Mã SKU</label>
+                     <input className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-slate-700 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.sku} onChange={e => f('sku', e.target.value)} placeholder="VD: SP-001" />
+                   </div>
+                   <div>
+                     <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Đơn vị / Trọng lượng</label>
+                     <div className="flex gap-2">
+                        <input className="w-1/2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:border-indigo-500 outline-none transition-all" value={form.unit} onChange={e => f('unit', e.target.value)} placeholder="Cái" />
+                        <input type="number" className="w-1/2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:border-indigo-500 outline-none transition-all" value={form.weight} onChange={e => f('weight', e.target.value)} placeholder="Gram" />
+                     </div>
+                   </div>
+                 </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_24px_rgb(0,0,0,0.02)] flex flex-col">
+                <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-50 pb-3 mb-4"><ImagePlus className="w-4 h-4 text-indigo-500" /> Hình ảnh đại diện</h4>
+                <div className="flex-1 flex flex-col items-center justify-center">
+                  {form.imageUrl ? (
+                    <div className="relative w-36 h-36 rounded-2xl overflow-hidden border border-slate-200 shadow-sm group">
+                      <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-500" />
+                      <button type="button" onClick={() => f('imageUrl', '')} className="absolute top-2 right-2 bg-white/90 backdrop-blur rounded-full w-8 h-8 flex items-center justify-center text-rose-500 hover:bg-rose-50 hover:text-rose-600 shadow-sm transition-all opacity-0 group-hover:opacity-100">✕</button>
+                    </div>
+                  ) : (
+                    <label className={`w-full h-full min-h-[144px] flex flex-col items-center justify-center gap-3 border-2 border-dashed border-slate-200 rounded-2xl p-4 cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-300 transition-all ${uploadingImage ? 'opacity-50 pointer-events-none' : ''}`}>
+                      {uploadingImage ? <Spinner size="md" className="text-indigo-500" /> : <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center"><ImageIcon className="w-6 h-6 text-slate-400" /></div>}
+                      <span className="text-sm font-medium text-slate-500">{uploadingImage ? 'Đang xử lý ảnh...' : 'Nhấn để tải ảnh lên (Tỉ lệ 1:1)'}</span>
+                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploadingImage} />
+                    </label>
+                  )}
+                </div>
               </div>
             </div>
+
+            <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_24px_rgb(0,0,0,0.02)]">
+              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Mô tả sản phẩm</label>
+              <textarea className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all resize-none custom-scrollbar" rows={3} value={form.description} onChange={e => f('description', e.target.value)} placeholder="Nhập mô tả chi tiết, thành phần, công dụng..." />
+            </div>
           </div>
 
-          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_24px_rgb(0,0,0,0.02)]">
-            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Mô tả sản phẩm</label>
-            <textarea className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all resize-none custom-scrollbar" rows={3} value={form.description} onChange={e => f('description', e.target.value)} placeholder="Nhập mô tả chi tiết, thành phần, công dụng..." />
+          {/* Footer Modal */}
+          <div className="p-6 border-t border-slate-100 flex gap-4 justify-end bg-white">
+            <button onClick={onClose} className="px-6 py-3 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">Hủy bỏ</button>
+            <button 
+              onClick={() => mut.mutate()} 
+              disabled={mut.isPending || !form.name || !form.isbnBarcode || !form.retailPrice || !form.categoryId || uploadingImage} 
+              className="flex items-center justify-center min-w-[160px] px-6 py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-[0_4px_12px_rgb(99,102,241,0.3)] hover:bg-indigo-700 disabled:opacity-50 disabled:shadow-none transition-all"
+            >
+              {mut.isPending ? <Spinner size="sm" className="text-white" /> : (isEdit ? 'Lưu thay đổi' : 'Hoàn tất tạo mới')}
+            </button>
           </div>
-        </div>
-
-        {/* Footer Modal */}
-        <div className="p-6 border-t border-slate-100 flex gap-4 justify-end bg-white">
-          <button onClick={onClose} className="px-6 py-3 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">Hủy bỏ</button>
-          <button 
-            onClick={() => mut.mutate()} 
-            disabled={mut.isPending || !form.name || !form.isbnBarcode || !form.retailPrice || !form.categoryId || uploadingImage} 
-            className="flex items-center justify-center min-w-[160px] px-6 py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-[0_4px_12px_rgb(99,102,241,0.3)] hover:bg-indigo-700 disabled:opacity-50 disabled:shadow-none transition-all"
-          >
-            {mut.isPending ? <Spinner size="sm" className="text-white" /> : (isEdit ? 'Lưu thay đổi' : 'Hoàn tất tạo mới')}
-          </button>
         </div>
       </div>
-    </div>
+
+      {/* Gọi Camera Quét Mã (Z-index cao nhất đè lên Modal Form) */}
+      {isScanning && (
+        <BarcodeScanner 
+          onScanSuccess={(code) => {
+            f('isbnBarcode', code);
+            setIsScanning(false);
+          }}
+          onClose={() => setIsScanning(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -310,7 +344,7 @@ export default function ProductsPage() {
   const [keyword, setKeyword] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
   
-  // ĐÃ THÊM (BƯỚC 1): BỘ LỌC NHÀ CUNG CẤP
+  // BỘ LỌC NHÀ CUNG CẤP
   const [supplierFilter, setSupplierFilter] = useState<string>('');
   
   const [isActiveFilter, setIsActiveFilter] = useState<string>('');
@@ -320,7 +354,7 @@ export default function ProductsPage() {
   const [editing, setEditing] = useState<ProductResponse | undefined>();
   const [viewingProduct, setViewingProduct] = useState<ProductResponse | null>(null);
   
-  // ĐÃ THÊM (BƯỚC 3): STATE ĐIỀU CHỈNH TỒN KHO NHANH
+  // STATE ĐIỀU CHỈNH TỒN KHO NHANH
   const [adjustingProduct, setAdjustingProduct] = useState<ProductResponse | null>(null);
 
   const qc = useQueryClient();
@@ -338,7 +372,7 @@ export default function ProductsPage() {
     queryFn: () => productService.getProducts({ 
       keyword: keyword || undefined, 
       categoryId: selectedCategoryId || undefined, 
-      supplierId: supplierFilter || undefined, // ĐÃ THÊM THAM SỐ API (BƯỚC 1)
+      supplierId: supplierFilter || undefined, 
       isActive: isActiveFilter === '' ? undefined : isActiveFilter === 'true',
       page, size: 20 
     }).then(r => r.data.data),
@@ -507,7 +541,7 @@ export default function ProductsPage() {
                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
             </div>
 
-            {/* ĐÃ THÊM (BƯỚC 1): DROPDOWN LỌC NHÀ CUNG CẤP */}
+            {/* DROPDOWN LỌC NHÀ CUNG CẤP */}
             <div className="relative w-full sm:w-48 shrink-0 group">
               <select
                 value={supplierFilter}
@@ -616,7 +650,7 @@ export default function ProductsPage() {
                         <button onClick={(e) => { e.stopPropagation(); setViewingProduct(p); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Chi tiết"><Eye className="w-4 h-4"/></button>
                         <button onClick={(e) => handleEditClick(p.id, e)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title="Sửa"><Edit className="w-4 h-4"/></button>
                         
-                        {/* ĐÃ THÊM (BƯỚC 3): NÚT NHẬP KHO NHANH */}
+                        {/* NÚT NHẬP KHO NHANH */}
                         <button 
                             onClick={(e) => { e.stopPropagation(); setAdjustingProduct(p); }} 
                             className="text-emerald-600 hover:text-emerald-800 transition p-1.5 bg-emerald-50 rounded-lg hover:bg-emerald-100"
@@ -737,7 +771,7 @@ export default function ProductsPage() {
         </>
       )}
 
-      {/* ĐÃ THÊM (BƯỚC 3): MODAL ĐIỀU CHỈNH TỒN KHO NHANH */}
+      {/* MODAL ĐIỀU CHỈNH TỒN KHO NHANH */}
       {adjustingProduct && (
           <InventoryAdjustModal
               product={adjustingProduct} 
