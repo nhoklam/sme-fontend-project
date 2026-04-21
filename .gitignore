@@ -1,0 +1,21 @@
+# Bỏ qua thư mục chứa thư viện (Rất quan trọng để Vercel không bị lỗi 126)
+node_modules
+node_modules/
+
+# Bỏ qua thư mục build ra thành phẩm
+dist
+dist-ssr
+
+# Bỏ qua các file chứa biến môi trường (Bảo mật)
+.env
+.env.*
+!.env.example
+
+# Bỏ qua các file log hệ thống
+logs
+*.log
+npm-debug.log*
+
+# Bỏ qua file cấu hình của hệ điều hành
+.DS_Store
+Thumbs.db
