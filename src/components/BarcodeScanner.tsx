@@ -14,7 +14,17 @@ export default function BarcodeScanner({ onScanSuccess, onClose }: BarcodeScanne
 
   useEffect(() => {
     let isMounted = true;
-    const html5QrCode = new Html5Qrcode("reader-barcode");
+    
+    // ĐÃ SỬA: Đưa formatsToSupport vào config khi khởi tạo Html5Qrcode
+    const html5QrCode = new Html5Qrcode("reader-barcode", {
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.CODE_39
+      ]
+    });
 
     const startScanner = async () => {
       try {
@@ -30,14 +40,8 @@ export default function BarcodeScanner({ onScanSuccess, onClose }: BarcodeScanne
           {
             fps: 15,
             qrbox: { width: 250, height: 150 }, // Vẽ vùng quét tỉ lệ chuẩn mã vạch
-            aspectRatio: 1.0,
-            formatsToSupport: [
-              Html5QrcodeSupportedFormats.CODE_128,
-              Html5QrcodeSupportedFormats.EAN_13,
-              Html5QrcodeSupportedFormats.EAN_8,
-              Html5QrcodeSupportedFormats.UPC_A,
-              Html5QrcodeSupportedFormats.CODE_39
-            ]
+            aspectRatio: 1.0
+            // ĐÃ XÓA formatsToSupport ở đây
           },
           (decodedText) => {
             if (isMounted) {
