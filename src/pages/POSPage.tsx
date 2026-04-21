@@ -5,12 +5,14 @@ import toast from 'react-hot-toast';
 import { useReactToPrint } from 'react-to-print';
 import {
   Search, X, Lock, CheckCircle, Package, ScanLine, Smartphone,
-  Clock, RefreshCcw, Tag, Minus, Plus, Trash2, Banknote, CreditCard, ChevronRight, ChevronLeft, User, Gift
+  Clock, RefreshCcw, Tag, Minus, Plus, Trash2, Banknote, CreditCard, 
+  ChevronRight, ChevronLeft, User, Gift, Bot, Sparkles, MessageSquare, Send
 } from 'lucide-react';
 
 import { posService } from '@/services/pos.service';
 import { productService } from '@/services/product.service';
 import { inventoryService } from '@/services/inventory.service';
+import { aiService } from '@/services/ai.service'; // Đã thêm AI Service
 import { useAuthStore } from '@/stores/auth.store';
 import { usePOSStore } from '@/stores/pos.store';
 import { formatCurrency, getErrorMessage, formatDateTime } from '@/lib/utils';
@@ -21,6 +23,131 @@ import CustomerSelectModal from '@/components/CustomerSelectModal';
 
 import type { CartItem, InvoiceResponse } from '@/types';
 
+// ── COMPONENT AI CHATBOT THÔNG MINH CHO POS ───────────────────────────
+interface ChatMessage { role: 'user' | 'assistant'; content: string; ts: Date; }
+
+function AIChatPanel({ onClose }: { onClose: () => void }) {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: 'assistant', content: 'Xin chào! Tôi là Trợ lý AI hệ thống SME ERP. Đang đứng quầy có vấn đề gì cần hỗ trợ không? Bạn có thể hỏi tôi về quy định đổi trả, phân tích doanh số ca này, hoặc kiểm tra thông tin hàng hóa.', ts: new Date() }
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
+  const send = async () => {
+    if (!input.trim() || loading) return;
+    const userMsg = input.trim();
+    setInput('');
+    setMessages(prev => [...prev, { role: 'user', content: userMsg, ts: new Date() }]);
+    setLoading(true);
+    try {
+      const history = messages.slice(-6).map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n');
+      const res = await aiService.chat({ message: userMsg, conversationHistory: history });
+      setMessages(prev => [...prev, { role: 'assistant', content: res.data.data.reply, ts: new Date() }]);
+    } catch {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Xin lỗi, hệ thống AI đang bận. Vui lòng thử lại sau giây lát.', ts: new Date() }]);
+    } finally { setLoading(false); }
+  };
+
+  const suggestions = [
+    '📦 Sản phẩm nào đang bán chạy nhất?',
+    '🔄 Quy định đổi trả hàng?',
+    '💡 Khách quen có ưu đãi gì?',
+  ];
+
+  return (
+    <div className="fixed right-4 bottom-24 lg:right-8 lg:bottom-8 z-[99] flex flex-col w-[350px] lg:w-[400px] h-[500px] lg:h-[600px] max-h-[75vh] bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] border border-slate-100 overflow-hidden animate-slide-up origin-bottom-right">
+      
+      {/* Header Gradient Sang trọng */}
+      <div className="px-5 py-4 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-800 flex items-center justify-between shrink-0 relative overflow-hidden">
+        <div className="absolute top-[-20px] right-[-20px] w-32 h-32 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
+        <div className="flex items-center gap-3 relative z-10">
+          <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-xl flex items-center justify-center shadow-inner border border-white/20">
+            <Bot className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h3 className="font-extrabold text-white text-base tracking-tight flex items-center gap-1">AI Co-pilot <Sparkles className="w-3.5 h-3.5 text-amber-300"/></h3>
+            <p className="text-indigo-100 text-[10px] font-bold tracking-widest uppercase mt-0.5">Trợ lý ảo Thu Ngân</p>
+          </div>
+        </div>
+        <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors relative z-10">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Messages Area */}
+      <div className="flex-1 overflow-y-auto p-5 space-y-5 bg-slate-50/50 custom-scrollbar">
+        {messages.map((m, i) => (
+          <div key={i} className={`flex gap-3 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            {m.role === 'assistant' && (
+              <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center shrink-0 border border-indigo-200 mt-1 shadow-sm">
+                <Bot className="w-4 h-4 text-indigo-600" />
+              </div>
+            )}
+            <div className={`max-w-[85%] px-4 py-3 text-[14px] shadow-sm leading-relaxed ${
+              m.role === 'user' 
+                ? 'bg-indigo-600 text-white rounded-[20px] rounded-tr-[4px] font-medium' 
+                : 'bg-white border border-slate-100 text-slate-800 rounded-[20px] rounded-tl-[4px]'
+            }`}>
+              {m.content}
+            </div>
+          </div>
+        ))}
+        
+        {/* Typing Indicator */}
+        {loading && (
+          <div className="flex gap-3 justify-start animate-fade-in">
+            <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center shrink-0 border border-indigo-200 mt-1 shadow-sm">
+              <Bot className="w-4 h-4 text-indigo-600" />
+            </div>
+            <div className="bg-white border border-slate-100 px-4 py-3 rounded-[20px] rounded-tl-[4px] shadow-sm flex items-center gap-1.5 h-[46px]">
+              <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+              <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Input Area & Suggestions */}
+      <div className="bg-white border-t border-slate-100 p-4 shrink-0 flex flex-col gap-3">
+        {/* Suggestions */}
+        {messages.length === 1 && (
+          <div className="flex gap-2 overflow-x-auto custom-scrollbar pb-1">
+            {suggestions.map(s => (
+              <button key={s} onClick={() => setInput(s)}
+                className="shrink-0 text-[11px] font-bold bg-white text-slate-600 border border-slate-200 rounded-full px-3 py-1.5 hover:bg-slate-50 hover:text-indigo-600 transition-colors shadow-sm">
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2 items-center bg-slate-50 border border-slate-200 p-1.5 rounded-2xl focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
+          <input 
+            value={input} 
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
+            className="flex-1 bg-transparent text-[14px] px-3 py-2 outline-none text-slate-800 placeholder:text-slate-400 font-medium" 
+            placeholder="Hỏi AI Co-pilot..." 
+          />
+          <button 
+            onClick={send} 
+            disabled={!input.trim() || loading}
+            className="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center shrink-0 hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:bg-slate-300 shadow-sm"
+          >
+            <Send className="w-4 h-4 ml-0.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 export default function POSPage() {
   const { user } = useAuthStore();
   const qc = useQueryClient();
@@ -38,6 +165,9 @@ export default function POSPage() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  
+  // --- AI CHAT STATE ---
+  const [showAI, setShowAI] = useState(false);
 
   // --- SHIFT STATES ---
   const [showOpenShift, setShowOpenShift] = useState(false);
@@ -216,7 +346,7 @@ export default function POSPage() {
   // VIEW 2: MÀN HÌNH POS (MOBILE FIRST FULL SCREEN)
   // ==========================================
   return (
-    <div className="h-screen w-full bg-gray-50 flex flex-col overflow-hidden text-gray-800 font-sans z-50">
+    <div className="h-screen w-full bg-gray-50 flex flex-col overflow-hidden text-gray-800 font-sans z-50 relative">
       
       {/* 1. HEADER CỐ ĐỊNH & THANH TÌM KIẾM */}
       <div className="bg-white shadow-[0_2px_10px_rgb(0,0,0,0.05)] z-20 flex-shrink-0">
@@ -456,6 +586,22 @@ export default function POSPage() {
           </button>
         </div>
       </div>
+
+      {/* ── AI CHATBOT TOGGLE & PANEL ── */}
+      {!showAI && (
+        <button
+          onClick={() => setShowAI(true)}
+          className="fixed right-4 bottom-24 lg:right-8 lg:bottom-8 w-14 h-14 lg:w-16 lg:h-16 bg-gradient-to-tr from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-full shadow-[0_10px_25px_rgba(79,70,229,0.5)] flex items-center justify-center transition-transform hover:scale-110 z-[90] border-2 border-white/20"
+        >
+          <Bot className="w-7 h-7" />
+          <span className="absolute top-0 right-0 flex h-3 w-3 lg:h-4 lg:w-4">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-3 w-3 lg:h-4 lg:w-4 bg-amber-500 border-2 border-white"></span>
+          </span>
+        </button>
+      )}
+      
+      {showAI && <AIChatPanel onClose={() => setShowAI(false)} />}
 
       {/* --- CÁC MODALS OVERLAY --- */}
       {isScanning && <BarcodeScanner onScanSuccess={handleScanSuccess} onClose={() => setIsScanning(false)} />}
