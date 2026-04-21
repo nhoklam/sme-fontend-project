@@ -16,7 +16,9 @@ export default function BarcodeScanner({ onScanSuccess, onClose }: BarcodeScanne
     let isMounted = true;
     
     // Đưa formatsToSupport vào config khi khởi tạo Html5Qrcode
+    // Đã thêm verbose: false để fix lỗi TypeScript Build
     const html5QrCode = new Html5Qrcode("reader-barcode", {
+      verbose: false,
       formatsToSupport: [
         Html5QrcodeSupportedFormats.CODE_128,
         Html5QrcodeSupportedFormats.EAN_13,
