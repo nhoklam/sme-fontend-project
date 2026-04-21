@@ -1,8 +1,7 @@
 import api from '@/lib/axios';
-import type { ApiResponse, PageResponse, Supplier } from '@/types'; // ĐÃ BỔ SUNG PageResponse
+import type { ApiResponse, PageResponse, Supplier } from '@/types'; 
 
 export const supplierService = {
-  // ĐÃ NÂNG CẤP: Hỗ trợ phân trang và tìm kiếm Server-side
   getAll: (params?: { keyword?: string; page?: number; size?: number }) =>
     api.get<ApiResponse<PageResponse<Supplier>>>('/suppliers', { params }),
 
@@ -14,4 +13,7 @@ export const supplierService = {
 
   update: (id: string, data: Partial<Supplier>) =>
     api.put<ApiResponse<Supplier>>(`/suppliers/${id}`, data),
+    
+  importBulk: (data: any[]) =>
+    api.post<ApiResponse<any>>('/suppliers/bulk', data),
 };

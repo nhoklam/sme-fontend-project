@@ -1,8 +1,7 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { X, Plus, Trash2, Package } from 'lucide-react';
-// ĐÃ SỬA: Dùng đường dẫn tương đối ../ thay vì @/
 import { supplierService } from '../services/supplier.service';
 import { warehouseService } from '../services/warehouse.service';
 import { productService } from '../services/product.service';
@@ -27,9 +26,8 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
     note: '',
   });
 
-  const [items, setItems] = useState<Array<{ productId: string; quantity: number; importPrice: number }>>([]);
+  const [items, setItems] = useState<Array<{ productId: string; quantity: number; importPrice: number | string }>>([]);
 
-  // ĐÃ SỬA: Thêm (r: any)
   const { data: suppliers } = useQuery({
     queryKey: ['suppliers-po'],
     queryFn: () => supplierService.getAll({ size: 1000 }).then((r: any) => r.data.data.content),
@@ -41,15 +39,12 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
     enabled: isAdmin(), 
   });
 
-  const { data: productsData } = useQuery({
-    queryKey: ['products-po'],
-    queryFn: () => productService.getProducts({ size: 1000 }).then((r: any) => r.data.data.content),
+  // ĐÃ SỬA (BƯỚC 2): CHỈ FETCH KHI CHỌN NCC
+  const { data: filteredProducts, isLoading: loadingProducts } = useQuery({
+    queryKey: ['products-po', form.supplierId],
+    queryFn: () => productService.getProducts({ supplierId: form.supplierId, size: 1000 }).then((r: any) => r.data.data.content),
+    enabled: !!form.supplierId, // Chỉ chạy khi supplierId có giá trị
   });
-
-  const filteredProducts = useMemo(() => {
-    if (!form.supplierId) return []; 
-    return productsData?.filter((p: any) => p.supplierId === form.supplierId) || [];
-  }, [productsData, form.supplierId]);
 
   useEffect(() => {
     setItems([]);
@@ -60,7 +55,7 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
       supplierId: form.supplierId,
       warehouseId: form.warehouseId,
       note: form.note,
-      items: items
+      items: items.map(i => ({ ...i, importPrice: Number(i.importPrice) })) // Ép kiểu số
     }),
     onSuccess: () => {
       toast.success('Tạo phiếu nhập kho thành công! Phiếu đang chờ duyệt.');
@@ -70,17 +65,22 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Lỗi khi tạo phiếu nhập kho'),
   });
 
-  const handleAddItem = () => setItems([...items, { productId: '', quantity: 1, importPrice: 0 }]);
+  const handleAddItem = () => setItems([...items, { productId: '', quantity: 1, importPrice: '' }]);
 
   const handleUpdateItem = (index: number, field: string, value: any) => {
     const newItems = [...items];
     
     if (field === 'productId') {
-      const selectedProduct = filteredProducts?.find((p: any) => p.id === value);
+      // ĐÃ THÊM (BƯỚC 3): CHẶN TRÙNG LẶP SẢN PHẨM TRONG GIỎ
+      const isExist = newItems.some((item, i) => i !== index && item.productId === value);
+      if (isExist && value !== '') {
+        toast.error("Sản phẩm này đã có trong danh sách nhập!");
+        return;
+      }
       newItems[index] = { 
         ...newItems[index], 
         productId: value,
-        importPrice: selectedProduct?.macPrice || 0 
+        importPrice: '' // BẮT BUỘC NGƯỜI DÙNG PHẢI TỰ GÕ GIÁ
       };
     } else {
       newItems[index] = { ...newItems[index], [field]: value };
@@ -91,11 +91,22 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
 
   const handleRemoveItem = (index: number) => setItems(items.filter((_, i) => i !== index));
 
-  const totalAmount = items.reduce((sum, item) => sum + (item.quantity * item.importPrice), 0);
+  const totalAmount = items.reduce((sum, item) => sum + (item.quantity * (Number(item.importPrice) || 0)), 0);
 
-  const isValid = form.supplierId && form.warehouseId && 
-                  items.length > 0 && 
-                  items.every(i => i.productId && i.quantity > 0 && i.importPrice > 0);
+  const handleSubmit = () => {
+    if (items.length === 0) {
+      toast.error("Vui lòng thêm ít nhất 1 sản phẩm");
+      return;
+    }
+    const hasZeroPrice = items.some(item => Number(item.importPrice) <= 0);
+    if (hasZeroPrice) {
+      toast.error("Vui lòng nhập giá nhập thực tế (Lớn hơn 0) cho tất cả sản phẩm!");
+      return;
+    }
+    createMut.mutate();
+  };
+
+  const isValid = form.supplierId && form.warehouseId && items.length > 0 && items.every(i => i.productId && i.quantity > 0 && Number(i.importPrice) > 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -162,7 +173,7 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
               <h3 className="font-semibold text-gray-800 flex items-center gap-2">
                 <Package className="w-5 h-5 text-primary-600" /> Danh sách hàng nhập
               </h3>
-              {form.supplierId && filteredProducts.length > 0 && (
+              {form.supplierId && (filteredProducts || []).length > 0 && (
                 <button type="button" onClick={handleAddItem} className="btn-secondary btn-sm">
                   <Plus className="w-4 h-4 mr-1" /> Thêm sản phẩm
                 </button>
@@ -173,20 +184,19 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
               <div className="text-center py-8 text-gray-400 text-sm bg-gray-50 rounded-lg border border-dashed border-gray-200">
                 Vui lòng chọn Nhà cung cấp ở trên để xem danh sách sản phẩm.
               </div>
-            ) : filteredProducts.length === 0 ? (
+            ) : loadingProducts ? (
+              <div className="flex justify-center py-8"><Spinner /></div>
+            ) : (filteredProducts || []).length === 0 ? (
               <div className="text-center py-8 text-amber-600 bg-amber-50 rounded-lg border border-dashed border-amber-200 flex flex-col items-center gap-3">
                 <Package className="w-10 h-10 opacity-50" />
                 <div>
                   <p className="font-bold text-lg">Chưa có sản phẩm nào!</p>
                   <p className="text-sm opacity-80 mt-1 max-w-md">
-                    Hệ thống không tìm thấy sản phẩm nào thuộc Nhà cung cấp này. Bạn cần khai báo danh mục sản phẩm trước khi nhập hàng.
+                    Hệ thống không tìm thấy sản phẩm nào thuộc Nhà cung cấp này. Bạn cần khai báo sản phẩm trước khi nhập hàng.
                   </p>
                 </div>
                 <button 
-                  onClick={() => {
-                    onClose(); 
-                    navigate('/products');
-                  }}
+                  onClick={() => { onClose(); navigate('/products'); }}
                   className="btn-primary mt-2 shadow-md shadow-amber-200/50"
                 >
                   <Plus className="w-4 h-4 mr-1" /> Đi tới Quản lý Sản phẩm
@@ -203,15 +213,13 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
                     <div className="flex-1 min-w-[200px]">
                       <label className="label text-xs">Sản phẩm</label>
                       <select 
-                        className="input py-1.5 text-sm"
+                        className="input py-1.5 text-sm border-gray-300"
                         value={item.productId}
                         onChange={e => handleUpdateItem(index, 'productId', e.target.value)}
                       >
                         <option value="">-- Chọn sản phẩm --</option>
                         {filteredProducts?.map((p: any) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name}
-                          </option>
+                          <option key={p.id} value={p.id}>{p.name}</option>
                         ))}
                       </select>
                     </div>
@@ -219,7 +227,7 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
                       <label className="label text-xs">Số lượng</label>
                       <input 
                         type="number" min={1}
-                        className="input py-1.5 text-sm font-semibold text-center"
+                        className="input py-1.5 text-sm font-semibold text-center border-gray-300"
                         value={item.quantity || ''}
                         onChange={e => handleUpdateItem(index, 'quantity', parseInt(e.target.value) || 0)}
                       />
@@ -228,22 +236,22 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
                       <label className="label text-xs">Giá nhập (VNĐ)</label>
                       <input 
                         type="number" min={1}
-                        className="input py-1.5 text-sm font-semibold text-right"
-                        value={item.importPrice || ''}
-                        onChange={e => handleUpdateItem(index, 'importPrice', parseInt(e.target.value) || 0)}
+                        className={`input py-1.5 text-sm font-semibold text-right ${!item.importPrice || Number(item.importPrice) <= 0 ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}
+                        value={item.importPrice}
+                        placeholder="Nhập giá..."
+                        onChange={e => handleUpdateItem(index, 'importPrice', e.target.value)}
                       />
                     </div>
                     <div className="w-32 hidden md:block">
                       <label className="label text-xs">Thành tiền</label>
                       <div className="py-1.5 text-sm font-bold text-primary-600 text-right">
-                        {formatCurrency(item.quantity * item.importPrice)}
+                        {formatCurrency(item.quantity * (Number(item.importPrice) || 0))}
                       </div>
                     </div>
                     <div className="pb-1">
                       <button 
                         onClick={() => handleRemoveItem(index)}
                         className="p-2 text-red-500 hover:bg-red-100 rounded-lg transition-colors"
-                        title="Xóa dòng này"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -267,11 +275,11 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
         <div className="p-5 border-t bg-white rounded-b-2xl flex justify-end gap-3 shrink-0">
           <button onClick={onClose} className="btn-secondary px-6">Hủy bỏ</button>
           <button 
-            onClick={() => createMut.mutate()} 
+            onClick={handleSubmit} 
             disabled={!isValid || createMut.isPending}
             className="btn-primary px-6"
           >
-            {createMut.isPending ? <Spinner size="sm" /> : 'Xác nhận tạo phiếu (Chờ duyệt)'}
+            {createMut.isPending ? <Spinner size="sm" /> : 'Xác nhận tạo phiếu'}
           </button>
         </div>
 

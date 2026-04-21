@@ -15,13 +15,11 @@ interface Props {
 export function ReceiveTransferModal({ transferId, onClose, onSaved }: Props) {
   const [receivedItems, setReceivedItems] = useState<Record<string, number>>({});
 
-  // Lấy chi tiết phiếu chuyển
   const { data: transfer, isLoading } = useQuery({
     queryKey: ['transfer-detail-receive', transferId],
     queryFn: () => transferService.getById(transferId).then(r => r.data.data),
   });
 
-  // Map tên sản phẩm
   const { data: products } = useQuery({
     queryKey: ['products-dict'],
     queryFn: () => productService.getProducts({ size: 1000 }).then(r => r.data.data.content),
@@ -33,7 +31,6 @@ export function ReceiveTransferModal({ transferId, onClose, onSaved }: Props) {
     return map;
   }, [products]);
 
-  // Khởi tạo số lượng thực nhận ban đầu = số lượng xuất đi
   useEffect(() => {
     if (transfer) {
       const initialRecord: Record<string, number> = {};
@@ -46,6 +43,7 @@ export function ReceiveTransferModal({ transferId, onClose, onSaved }: Props) {
 
   const receiveMut = useMutation({
     mutationFn: () => {
+      // ĐÃ KIỂM TRA: Payload được map thành mảng Object chuẩn để gửi lên Backend
       const payload = Object.entries(receivedItems).map(([productId, receivedQty]) => ({
         productId,
         receivedQty
@@ -72,7 +70,6 @@ export function ReceiveTransferModal({ transferId, onClose, onSaved }: Props) {
     return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"><Spinner size="lg" className="text-white" /></div>;
   }
 
-  // Kiểm tra xem có mặt hàng nào bị thiếu hụt so với lúc gửi không
   const hasDiscrepancy = transfer.items.some(item => receivedItems[item.productId] !== item.quantity);
 
   return (

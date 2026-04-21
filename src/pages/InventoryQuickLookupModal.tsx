@@ -1,28 +1,31 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { X, Search, Package, AlertTriangle, ScanLine, Info } from 'lucide-react';
+import { X, Search, Package, ScanLine, Info } from 'lucide-react';
 import { inventoryService } from '../services/inventory.service';
+import { productService } from '../services/product.service';
 import { Spinner } from '../components/ui';
 
 interface Props {
-  products: any[];
-  selectedWarehouseId: string; // ĐÃ BỔ SUNG: Nhận mã kho từ trang chính
+  products: any[]; // Giữ lại interface để không lỗi các component gọi nó, nhưng sẽ fetch lại từ API
+  selectedWarehouseId: string;
   onClose: () => void;
 }
 
-export function InventoryQuickLookupModal({ products, selectedWarehouseId, onClose }: Props) {
-  const wid = selectedWarehouseId; // Dùng mã kho được truyền vào
-  
+export function InventoryQuickLookupModal({ selectedWarehouseId, onClose }: Props) {
+  const wid = selectedWarehouseId;
   const [selectedProductId, setSelectedProductId] = useState<string>('');
 
-  const { data: invData, isLoading, isError } = useQuery({
+  // Tải danh sách sản phẩm nhẹ để làm dropdown
+  const { data: productsData } = useQuery({
+    queryKey: ['products-dict-lookup'],
+    queryFn: () => productService.getProducts({ size: 1000 }).then((r: any) => r.data.data.content),
+  });
+
+  const { data: invData, isLoading } = useQuery({
     queryKey: ['inventory-single', selectedProductId, wid],
     queryFn: () => inventoryService.getOne(selectedProductId, wid).then((r: any) => r.data.data),
     enabled: !!selectedProductId && !!wid,
-    retry: false 
   });
-
-  const selectedProduct = products.find(p => p.id === selectedProductId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -30,9 +33,7 @@ export function InventoryQuickLookupModal({ products, selectedWarehouseId, onClo
         
         <div className="flex justify-between items-center p-5 border-b bg-indigo-50">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
-              <ScanLine className="w-5 h-5" />
-            </div>
+            <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg"><ScanLine className="w-5 h-5" /></div>
             <h2 className="text-lg font-bold text-gray-800">Tra cứu nhanh tồn kho</h2>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 bg-white p-1.5 rounded-full"><X className="w-5 h-5" /></button>
@@ -49,7 +50,7 @@ export function InventoryQuickLookupModal({ products, selectedWarehouseId, onClo
                 onChange={e => setSelectedProductId(e.target.value)}
               >
                 <option value="">-- Chọn sản phẩm --</option>
-                {products.map(p => (
+                {productsData?.map((p: any) => (
                   <option key={p.id} value={p.id}>
                     {p.isbnBarcode ? `[${p.isbnBarcode}] ` : ''}{p.name}
                   </option>
@@ -65,25 +66,19 @@ export function InventoryQuickLookupModal({ products, selectedWarehouseId, onClo
                   <Spinner size="md" />
                   <p className="mt-3 text-sm">Đang truy vấn máy chủ...</p>
                 </div>
-              ) : isError || !invData ? ( /* ĐÃ SỬA: Thêm điều kiện !invData vào đây */
-                <div className="flex flex-col items-center text-center py-4">
-                  <AlertTriangle className="w-10 h-10 text-amber-500 mb-2" />
-                  <p className="font-bold text-gray-800">Sản phẩm chưa có trong kho</p>
-                  <p className="text-sm text-gray-500 mt-1">Sản phẩm này chưa từng được nhập vào chi nhánh hiện tại.</p>
-                </div>
-              ) : ( /* ĐÃ SỬA: Xóa bỏ điều kiện kiểm tra invData ở đây vì đã bao quát ở trên */
+              ) : invData && (
                 <div className="space-y-4">
                   <div className="flex items-start gap-4 pb-4 border-b border-gray-200">
                     <div className="w-16 h-16 bg-white border border-gray-200 rounded-lg flex items-center justify-center shrink-0">
-                      {selectedProduct?.imageUrl ? (
-                        <img src={selectedProduct.imageUrl} alt="img" className="w-full h-full object-cover rounded-lg" />
+                      {invData.productImageUrl ? (
+                        <img src={invData.productImageUrl} alt="img" className="w-full h-full object-cover rounded-lg" />
                       ) : (
                         <Package className="w-8 h-8 text-gray-300" />
                       )}
                     </div>
                     <div>
-                      <h4 className="font-bold text-gray-800 text-lg leading-tight">{selectedProduct?.name}</h4>
-                      <p className="text-sm text-gray-500 mt-1 font-mono">Barcode: {selectedProduct?.isbnBarcode || 'N/A'}</p>
+                      <h4 className="font-bold text-gray-800 text-lg leading-tight">{invData.productName}</h4>
+                      <p className="text-sm text-gray-500 mt-1 font-mono">Barcode: {invData.isbnBarcode || 'N/A'}</p>
                     </div>
                   </div>
 

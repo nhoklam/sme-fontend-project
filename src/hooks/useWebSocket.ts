@@ -30,11 +30,14 @@ interface UseWebSocketOptions {
 // Tự động resolve WS URL từ API base URL
 function getWsUrl(): string {
   const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api';
-  // http://... → ws://..., https://... → wss://...
-  return apiBase
+  // Xóa dấu slash ở cuối nếu có để tránh bị lỗi //ws
+  const cleanBase = apiBase.replace(/\/$/, '');
+  
+  // Đổi http thành ws và nối thêm /ws vào cuối đường dẫn API
+  // Kết quả: ws://localhost:8080/api/ws
+  return cleanBase
     .replace(/^http:/, 'ws:')
-    .replace(/^https:/, 'wss:')
-    .replace(/\/api$/, '/ws');
+    .replace(/^https:/, 'wss:') + '/ws';
 }
 
 // ── Hook ─────────────────────────────────────────────────────

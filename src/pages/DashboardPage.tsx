@@ -1,1074 +1,536 @@
-import { useState, useRef, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
-  TrendingUp, ShoppingBag, AlertTriangle, DollarSign,
-  MessageSquare, Send, X, Bot, CheckCircle, Package, ChevronRight, Clock,
-  Banknote, Landmark, Wallet, Trophy, Medal, BarChart3,
-  AlertCircle, CreditCard, UserCheck,
-  History, Plus, Pencil, Trash2
+  TrendingUp, MessageSquare, Send, X, Bot, CheckCircle, ChevronRight, Clock,
+  Banknote, Landmark, Wallet, Trophy, CreditCard, UserCheck,
+  History, Building2, PackageOpen, ShoppingCart, AlertTriangle, FileText,
+  Activity
 } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, ComposedChart, Line } from 'recharts';
+import { format, subDays, startOfDay, subMonths, startOfYear } from 'date-fns';
+import toast from 'react-hot-toast';
+
 import { reportService } from '@/services/report.service';
-import { orderService } from '@/services/order.service';
-import { inventoryService } from '@/services/inventory.service';
-import { aiService } from '@/services/ai.service';
 import { posService } from '@/services/pos.service';
 import { financeService } from '@/services/finance.service';
 import { adminService } from '@/services/admin.service';
+import { warehouseService } from '@/services/warehouse.service';
 import { useAuthStore } from '@/stores/auth.store';
-import { formatCurrency, formatDateTime, getOrderStatusColor, getOrderStatusLabel } from '@/lib/utils';
-import { PageLoader, EmptyState } from '@/components/ui';
-import { format, subDays, startOfDay } from 'date-fns';
-import toast from 'react-hot-toast';
+import { formatCurrency, formatDateTime } from '@/lib/utils';
+import { PageLoader } from '@/components/ui';
 import { useDashboardWebSocket } from '@/hooks/useDashboardWebSocket';
-import type { ShiftResponse, AuditLogResponse, LowStockItem } from '@/types';
 
-// ── Types cho Dashboard Summary ────────────────────────────────
-interface RevenuePeriod {
-  period: string;
-  revenue: number;
-  cogs: number;
-  gross_profit: number;
-  invoice_count: number;
-}
+type TimeFilter = '7d' | '30d' | '3m' | 'thisYear';
 
-interface DashboardSummary {
-  warehouseId: string;
-  revenueToday: RevenuePeriod[];
-  lowStockCount: number;
-}
-
-interface CashBalance {
-  CASH_111: number;
-  BANK_112: number;
-  total: number;
-}
-
-interface TopProductItem {
-  id: string;
-  name: string;
-  total_sold: number;
-}
-
-interface SupplierDebtItem {
-  id: string;
-  supplierId: string;
-  supplierName: string;          
-  purchaseOrderId: string;
-  purchaseOrderCode?: string;
-  warehouseId?: string;
-  warehouseName?: string;
-  totalDebt: number;
-  paidAmount: number;
-  remainingAmount: number;
-  status: 'UNPAID' | 'PARTIAL' | 'PAID';
-  dueDate?: string;
-  createdAt: string;
-}
-
-// ── KPI Card ──────────────────────────────────────────────────
-function KPICard({ icon: Icon, label, value, sub, color }: {
-  icon: React.ElementType; label: string; value: string; sub?: string; color: string;
-}) {
-  return (
-    <div className="card p-5 flex items-start gap-4">
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}>
-        <Icon className="w-6 h-6 text-white" />
-      </div>
-      <div>
-        <p className="text-gray-500 text-sm">{label}</p>
-        <p className="text-2xl font-bold text-gray-800 mt-0.5">{value}</p>
-        {sub && <p className="text-gray-400 text-xs mt-0.5">{sub}</p>}
-      </div>
-    </div>
-  );
-}
-
-// ── Cash Balance Widget ────────────────────────────────────────
-function CashBalanceWidget({ balance }: { balance: CashBalance | undefined }) {
-  const isLoading = balance === undefined;
-
-  const rows = [
-    {
-      icon: Banknote,
-      label: 'Tiền mặt (TK 111)',
-      value: balance?.CASH_111 ?? 0,
-      color: 'text-green-600',
-      bg: 'bg-green-50',
-      iconColor: 'text-green-500',
-    },
-    {
-      icon: Landmark,
-      label: 'Ngân hàng (TK 112)',
-      value: balance?.BANK_112 ?? 0,
-      color: 'text-blue-600',
-      bg: 'bg-blue-50',
-      iconColor: 'text-blue-500',
-    },
-  ];
-
-  return (
-    <div className="card">
-      <div className="card-header">
-        <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-          <Wallet className="w-4 h-4 text-primary-500" />
-          Số dư quỹ
-        </h3>
-        <Link to="/finance" className="text-primary-600 text-sm hover:underline">
-          Sổ quỹ
-        </Link>
-      </div>
-
-      <div className="p-4 space-y-3">
-        {isLoading ? (
-          <div className="space-y-3">
-            {[1, 2].map(i => (
-              <div key={i} className="h-14 bg-gray-100 rounded-xl animate-pulse" />
-            ))}
-          </div>
-        ) : (
-          <>
-            {rows.map(({ icon: Icon, label, value, color, bg, iconColor }) => (
-              <div key={label} className={`flex items-center gap-3 p-3 rounded-xl ${bg}`}>
-                <div className="w-9 h-9 bg-white rounded-lg flex items-center justify-center shadow-sm flex-shrink-0">
-                  <Icon className={`w-4 h-4 ${iconColor}`} />
+// ── CUSTOM COMPONENTS ─────────────────────────────────────────
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white/95 backdrop-blur-md p-4 rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-slate-100 min-w-[220px]">
+        <p className="font-semibold text-slate-800 mb-3 border-b border-slate-100 pb-2 text-sm">{label}</p>
+        <div className="space-y-3">
+          {payload.map((entry: any, index: number) => {
+            const isCount = entry.name === 'Số lượng' || entry.name === 'Số đơn hàng';
+            const val = isCount ? Number(entry.value).toLocaleString('vi-VN') : formatCurrency(entry.value);
+            return (
+              <div key={index} className="flex items-center justify-between gap-6">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: entry.color }} />
+                  <span className="text-sm font-medium text-slate-600">{entry.name}</span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-gray-500">{label}</p>
-                  <p className={`text-base font-bold ${color}`}>
-                    {formatCurrency(value)}
-                  </p>
-                </div>
+                <span className="text-sm font-bold text-slate-900">{val}</span>
               </div>
-            ))}
-
-            {/* Tổng cộng */}
-            <div className="border-t pt-3 flex items-center justify-between">
-              <span className="text-sm text-gray-500 font-medium">Tổng quỹ</span>
-              <span className="text-lg font-bold text-gray-800">
-                {formatCurrency(balance?.total ?? 0)}
-              </span>
-            </div>
-          </>
-        )}
+            );
+          })}
+        </div>
       </div>
-    </div>
-  );
-}
-
-// ── Pending Shifts Widget (có nút Duyệt ngay) ─────────────────
-function PendingShiftsWidget({
-  shifts,
-  onApprove,
-  approvingId,
-}: {
-  shifts: ShiftResponse[] | undefined;
-  onApprove: (id: string) => void;
-  approvingId: string | null;
-}) {
-  const isLoading = shifts === undefined;
-  const isEmpty   = !isLoading && shifts.length === 0;
-
-  return (
-    <div className="card">
-      <div className="card-header">
-        <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-          <UserCheck className="w-4 h-4 text-purple-500" />
-          Ca chờ duyệt
-          {!isLoading && shifts.length > 0 && (
-            <span className="ml-1 text-xs font-normal bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">
-              {shifts.length}
-            </span>
-          )}
-        </h3>
-        <Link to="/pos" className="text-primary-600 text-sm hover:underline">
-          Trang POS
-        </Link>
-      </div>
-
-      <div className="divide-y divide-gray-100">
-        {/* Skeleton */}
-        {isLoading && (
-          <div className="p-4 space-y-3">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="flex items-center gap-3">
-                <div className="flex-1 space-y-1.5">
-                  <div className="h-4 bg-gray-100 rounded animate-pulse w-2/3" />
-                  <div className="h-3 bg-gray-100 rounded animate-pulse w-1/2" />
-                </div>
-                <div className="h-7 w-16 bg-gray-100 rounded-lg animate-pulse" />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Empty */}
-        {isEmpty && (
-          <div className="p-6 text-center text-gray-400">
-            <CheckCircle className="w-8 h-8 mx-auto mb-2 text-green-400" />
-            <p className="text-sm">Không có ca chờ duyệt</p>
-          </div>
-        )}
-
-        {/* Shift rows */}
-        {!isLoading && (shifts ?? []).map(s => {
-          const isApproving  = approvingId === s.id;
-          const hasGap       = (s.discrepancyAmount ?? 0) !== 0;
-          const gapPositive  = (s.discrepancyAmount ?? 0) > 0;
-
-          return (
-            <div key={s.id} className="px-4 py-3">
-              <div className="flex items-start justify-between gap-3">
-                {/* Thông tin ca */}
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-gray-800 truncate">
-                    {s.cashierName ?? 'Thu ngân'}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {s.warehouseName && (
-                      <span className="mr-1">{s.warehouseName} •</span>
-                    )}
-                    {formatDateTime(s.closedAt ?? s.openedAt)}
-                  </p>
-
-                  {/* Doanh thu + chênh lệch */}
-                  <div className="flex items-center gap-3 mt-1.5">
-                    {(s.totalRevenue ?? 0) > 0 && (
-                      <span className="text-xs text-gray-500">
-                        DT: <span className="font-medium text-gray-700">
-                          {formatCurrency(s.totalRevenue ?? 0)}
-                        </span>
-                      </span>
-                    )}
-                    {hasGap && (
-                      <span className={`text-xs font-semibold ${gapPositive ? 'text-green-600' : 'text-red-600'}`}>
-                        {gapPositive ? '+' : ''}{formatCurrency(s.discrepancyAmount ?? 0)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Nút Duyệt */}
-                <button
-                  onClick={() => onApprove(s.id)}
-                  disabled={isApproving}
-                  className={`
-                    flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
-                    transition-all duration-150
-                    ${isApproving
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : 'bg-purple-600 text-white hover:bg-purple-700 active:scale-95 shadow-sm'
-                    }
-                  `}
-                >
-                  {isApproving ? (
-                    <>
-                      <span className="w-3 h-3 border-2 border-gray-300 border-t-gray-500 rounded-full animate-spin" />
-                      Đang duyệt
-                    </>
-                  ) : (
-                    <>
-                      <UserCheck className="w-3 h-3" />
-                      Duyệt
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {/* Lý do chênh lệch (nếu có) */}
-              {s.discrepancyReason && (
-                <p className="mt-1.5 text-xs text-amber-600 bg-amber-50 rounded px-2 py-1 truncate" title={s.discrepancyReason}>
-                  ⚠ {s.discrepancyReason}
-                </p>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ── Top Products Widget ────────────────────────────────────────
-const RANK_STYLE: Record<number, { bg: string; text: string; icon: React.ElementType | null }> = {
-  0: { bg: 'bg-amber-100',  text: 'text-amber-700',  icon: Trophy },
-  1: { bg: 'bg-gray-100',   text: 'text-gray-600',   icon: Medal },
-  2: { bg: 'bg-orange-100', text: 'text-orange-600', icon: Medal },
-};
-
-function TopProductsWidget({ items }: { items: TopProductItem[] | undefined }) {
-  const isLoading = items === undefined;
-  const isEmpty   = !isLoading && items.length === 0;
-
-  return (
-    <div className="card">
-      <div className="card-header">
-        <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-          <Trophy className="w-4 h-4 text-amber-500" />
-          Top bán chạy hôm nay
-        </h3>
-        <Link to="/reports" className="text-primary-600 text-sm hover:underline">
-          Xem chi tiết
-        </Link>
-      </div>
-
-      <div className="divide-y divide-gray-50">
-        {/* Skeleton loading */}
-        {isLoading && (
-          <div className="p-4 space-y-3">
-            {[1, 2, 3, 4, 5].map(i => (
-              <div key={i} className="flex items-center gap-3">
-                <div className="w-7 h-7 rounded-lg bg-gray-100 animate-pulse flex-shrink-0" />
-                <div className="flex-1 h-4 bg-gray-100 rounded animate-pulse" />
-                <div className="w-12 h-4 bg-gray-100 rounded animate-pulse" />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Empty state */}
-        {isEmpty && (
-          <div className="p-6 text-center text-gray-400">
-            <BarChart3 className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-            <p className="text-sm">Chưa có hóa đơn hôm nay</p>
-          </div>
-        )}
-
-        {/* Data rows */}
-        {!isLoading && items.map((item, index) => {
-          const style   = RANK_STYLE[index] ?? { bg: 'bg-white', text: 'text-gray-500', icon: null };
-          const RankIcon = style.icon;
-          // Tính chiều rộng bar tương đối so với vị trí #1
-          const maxSold = items[0]?.total_sold ?? 1;
-          const barPct  = Math.max(8, Math.round((item.total_sold / maxSold) * 100));
-
-          return (
-            <div key={item.id} className="px-4 py-2.5 flex items-center gap-3 hover:bg-gray-50 transition-colors">
-              {/* Rank badge */}
-              <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${style.bg}`}>
-                {RankIcon
-                  ? <RankIcon className={`w-3.5 h-3.5 ${style.text}`} />
-                  : <span className={`text-xs font-bold ${style.text}`}>{index + 1}</span>
-                }
-              </div>
-
-              {/* Tên sản phẩm + progress bar */}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-700 truncate" title={item.name}>
-                  {item.name}
-                </p>
-                <div className="mt-1 h-1 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-primary-400 rounded-full transition-all duration-500"
-                    style={{ width: `${barPct}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* Số lượng bán */}
-              <span className="text-sm font-bold text-primary-600 flex-shrink-0 tabular-nums">
-                {Number(item.total_sold ?? 0).toLocaleString('vi-VN')}
-                <span className="text-xs font-normal text-gray-400 ml-0.5">đã bán</span>
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// Config hiển thị trạng thái công nợ
-const DEBT_STATUS_CONFIG = {
-  UNPAID:  { label: 'Chưa TT',    cls: 'bg-red-100 text-red-700'     },
-  PARTIAL: { label: 'Một phần',   cls: 'bg-amber-100 text-amber-700' },
-  PAID:    { label: 'Đã TT',      cls: 'bg-green-100 text-green-700' },
-} as const;
-
-function formatShortDate(iso?: string): string {
-  if (!iso) return '—';
-  try {
-    return format(new Date(iso), 'dd/MM/yy');
-  } catch {
-    return '—';
+    );
   }
-}
-
-// ── Supplier Debts Widget ──────────────────────────────────────
-function SupplierDebtsWidget({ debts }: { debts: SupplierDebtItem[] | undefined }) {
-  const isLoading = debts === undefined;
-  const isEmpty   = !isLoading && debts.length === 0;
-
-  // Tổng công nợ còn lại
-  const totalRemaining = (debts ?? []).reduce((sum, d) => sum + d.remainingAmount, 0);
-
-  return (
-    <div className="card">
-      <div className="card-header">
-        <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-          <CreditCard className="w-4 h-4 text-red-500" />
-          Công nợ NCC
-          {!isLoading && (debts ?? []).length > 0 && (
-            <span className="ml-1 text-xs font-normal bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
-              {(debts ?? []).length}
-            </span>
-          )}
-        </h3>
-        <Link to="/finance" className="text-primary-600 text-sm hover:underline">
-          Xem sổ quỹ
-        </Link>
-      </div>
-
-      {/* Tổng công nợ */}
-      {!isLoading && totalRemaining > 0 && (
-        <div className="mx-4 mb-3 mt-1 p-3 bg-red-50 border border-red-100 rounded-xl flex items-center justify-between">
-          <span className="text-xs text-red-600 font-medium">Tổng còn phải trả</span>
-          <span className="text-base font-bold text-red-700">{formatCurrency(totalRemaining)}</span>
-        </div>
-      )}
-
-      <div className="divide-y divide-gray-50">
-        {/* Skeleton */}
-        {isLoading && (
-          <div className="p-4 space-y-3">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="space-y-1.5">
-                <div className="h-4 bg-gray-100 rounded animate-pulse w-3/4" />
-                <div className="h-3 bg-gray-100 rounded animate-pulse w-1/2" />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Empty state */}
-        {isEmpty && (
-          <div className="p-6 text-center text-gray-400">
-            <CheckCircle className="w-8 h-8 mx-auto mb-2 text-green-400" />
-            <p className="text-sm">Không có công nợ chưa thanh toán</p>
-          </div>
-        )}
-
-        {/* Debt rows */}
-        {!isLoading && (debts ?? []).map(debt => {
-          const statusCfg  = DEBT_STATUS_CONFIG[debt.status] ?? DEBT_STATUS_CONFIG.UNPAID;
-          const isOverdue  = debt.dueDate
-            ? new Date(debt.dueDate) < new Date()
-            : false;
-
-          return (
-            <div key={debt.id} className="px-4 py-3 hover:bg-gray-50 transition-colors">
-              <div className="flex items-start justify-between gap-2">
-                {/* Tên NCC + PO code */}
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-800 truncate" title={debt.supplierName}>
-                    {debt.supplierName}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {debt.purchaseOrderCode ?? 'N/A'}
-                    {debt.warehouseName && (
-                      <span className="ml-1 text-gray-300">• {debt.warehouseName}</span>
-                    )}
-                  </p>
-                </div>
-
-                {/* Số tiền còn lại */}
-                <div className="text-right flex-shrink-0">
-                  <p className="text-sm font-bold text-red-600">
-                    {formatCurrency(debt.remainingAmount)}
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    / {formatCurrency(debt.totalDebt)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Footer: due date + status badge */}
-              <div className="flex items-center justify-between mt-1.5">
-                <div className="flex items-center gap-1">
-                  {isOverdue && (
-                    <AlertCircle className="w-3 h-3 text-red-500" />
-                  )}
-                  <span className={`text-xs ${isOverdue ? 'text-red-500 font-semibold' : 'text-gray-400'}`}>
-                    {debt.dueDate ? `HH: ${formatShortDate(debt.dueDate)}` : 'Chưa có hạn'}
-                  </span>
-                </div>
-                <span className={`badge text-xs ${statusCfg.cls}`}>
-                  {statusCfg.label}
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ── Audit log helpers ─────────────────────────────────────────
-
-// Config badge theo action type
-const ACTION_CONFIG: Record<
-  AuditLogResponse['actionType'],
-  { label: string; dot: string; badge: string; Icon: React.ElementType }
-> = {
-  CREATE:  { label: 'Thêm',    dot: 'bg-green-400', badge: 'bg-green-100 text-green-700', Icon: Plus    },
-  UPDATE:  { label: 'Sửa',     dot: 'bg-blue-400',  badge: 'bg-blue-100 text-blue-700',  Icon: Pencil  },
-  DELETE:  { label: 'Xóa',     dot: 'bg-red-400',   badge: 'bg-red-100 text-red-700',    Icon: Trash2  },
-  UNKNOWN: { label: 'Khác',    dot: 'bg-gray-300',  badge: 'bg-gray-100 text-gray-500',  Icon: History },
+  return null;
 };
 
-// Chuyển Instant ISO → thời gian tương đối dễ đọc
-function timeAgo(isoStr: string): string {
-  const diff = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
-  if (diff < 60)   return `${diff}s trước`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m trước`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h trước`;
-  return format(new Date(isoStr), 'dd/MM HH:mm');
-}
-
-// ── Audit Log Widget (Admin only) ─────────────────────────────
-function AuditLogWidget({ logs }: { logs: AuditLogResponse[] | undefined }) {
-  const isLoading = logs === undefined;
-  const isEmpty   = !isLoading && logs.length === 0;
-
+const TimeFilterGroup = ({ active, onChange }: { active: TimeFilter, onChange: (val: TimeFilter) => void }) => {
+  const options = [{ id: '7d', label: '7 ngày' }, { id: '30d', label: '30 ngày' }, { id: '3m', label: '3 tháng' }, { id: 'thisYear', label: 'Năm nay' }];
   return (
-    <div className="card">
-      {/* Header */}
-      <div className="card-header">
-        <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-          <History className="w-4 h-4 text-indigo-500" />
-          Hoạt động hệ thống
-          <span className="text-xs font-normal text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full">
-            Admin
-          </span>
-        </h3>
-        <Link to="/settings" className="text-primary-600 text-sm hover:underline">
-          Xem đầy đủ
-        </Link>
-      </div>
-
-      {/* Timeline */}
-      <div className="px-4 py-3 space-y-0">
-        {/* Skeleton */}
-        {isLoading && (
-          <div className="space-y-4 py-1">
-            {[1, 2, 3, 4, 5].map(i => (
-              <div key={i} className="flex gap-3">
-                <div className="w-2 h-2 mt-1.5 rounded-full bg-gray-200 animate-pulse flex-shrink-0" />
-                <div className="flex-1 space-y-1.5">
-                  <div className="h-3.5 bg-gray-100 rounded animate-pulse w-4/5" />
-                  <div className="h-3 bg-gray-100 rounded animate-pulse w-2/5" />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Empty */}
-        {isEmpty && (
-          <div className="py-6 text-center text-gray-400">
-            <History className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-            <p className="text-sm">Chưa có hoạt động nào</p>
-          </div>
-        )}
-
-        {/* Log rows — timeline style */}
-        {!isLoading && (logs ?? []).map((log, idx) => {
-          const cfg      = ACTION_CONFIG[log.actionType] ?? ACTION_CONFIG.UNKNOWN;
-          const isLast   = idx === (logs ?? []).length - 1;
-          const { Icon } = cfg;
-
-          return (
-            <div key={`${log.revision}-${idx}`} className="flex gap-3 group">
-              {/* Timeline line + dot */}
-              <div className="flex flex-col items-center flex-shrink-0">
-                <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${cfg.dot} ring-2 ring-white`} />
-                {!isLast && <div className="w-px flex-1 bg-gray-100 mt-1 mb-0" />}
-              </div>
-
-              {/* Content */}
-              <div className={`flex-1 min-w-0 ${isLast ? 'pb-0' : 'pb-3'}`}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    {/* Entity + action badge */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className={`inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded ${cfg.badge}`}>
-                        <Icon className="w-2.5 h-2.5" />
-                        {cfg.label}
-                      </span>
-                      <span className="text-sm font-medium text-gray-700 truncate">
-                        {log.entityName}
-                      </span>
-                    </div>
-
-                    {/* Changed by + entity ID */}
-                    <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1">
-                      <span className="font-medium text-gray-500">{log.changedBy}</span>
-                      <span className="text-gray-300">•</span>
-                      <span className="font-mono text-[10px] text-gray-400 truncate max-w-[110px]"
-                            title={log.entityId}>
-                        {log.entityId?.toString().substring(0, 8)}…
-                      </span>
-                    </p>
-                  </div>
-
-                  {/* Thời gian tương đối */}
-                  <span className="text-[10px] text-gray-400 flex-shrink-0 mt-0.5 tabular-nums">
-                    {timeAgo(log.changedAt)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ── Chat message ──────────────────────────────────────────────
-interface ChatMessage { role: 'user' | 'assistant'; content: string; ts: Date; }
-
-function AIChatPanel({ onClose }: { onClose: () => void }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', content: 'Xin chào! Tôi là AI Co-pilot của hệ thống SME ERP & POS. Tôi có thể giúp bạn phân tích dữ liệu kinh doanh, tra cứu chính sách nội bộ, và trả lời các câu hỏi về nghiệp vụ. Bạn cần hỗ trợ gì?', ts: new Date() }
-  ]);
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
-
-  const send = async () => {
-    if (!input.trim() || loading) return;
-    const userMsg = input.trim();
-    setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: userMsg, ts: new Date() }]);
-    setLoading(true);
-    try {
-      const history = messages.slice(-6).map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n');
-      const res = await aiService.chat({ message: userMsg, conversationHistory: history });
-      setMessages(prev => [...prev, { role: 'assistant', content: res.data.data.reply, ts: new Date() }]);
-    } catch {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Xin lỗi, đã xảy ra lỗi. Vui lòng thử lại.', ts: new Date() }]);
-    } finally { setLoading(false); }
-  };
-
-  const suggestions = [
-    'Phân tích doanh thu tuần này',
-    'Sản phẩm nào sắp hết hàng?',
-    'Chính sách đổi trả hàng?',
-  ];
-
-  return (
-    <div className="fixed right-6 bottom-6 z-50 flex flex-col w-96 h-[520px] card shadow-2xl">
-      {/* Header */}
-      <div className="p-4 border-b flex items-center gap-3 bg-primary-600 text-white rounded-t-xl">
-        <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-          <Bot className="w-4 h-4" />
-        </div>
-        <div className="flex-1">
-          <p className="font-semibold text-sm">AI Co-pilot</p>
-          <p className="text-primary-200 text-xs">Gemini 1.5 Flash</p>
-        </div>
-        <button onClick={onClose} className="text-white/70 hover:text-white"><X className="w-4 h-4" /></button>
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50">
-        {messages.map((m, i) => (
-          <div key={i} className={`flex gap-2 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {m.role === 'assistant' && (
-              <div className="w-7 h-7 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                <Bot className="w-3.5 h-3.5 text-primary-600" />
-              </div>
-            )}
-            <div className={`max-w-[80%] px-3 py-2 rounded-xl text-sm leading-relaxed ${
-              m.role === 'user' ? 'bg-primary-600 text-white' : 'bg-white border border-gray-200 text-gray-700'
-            }`}>
-              {m.content}
-            </div>
-          </div>
-        ))}
-        {loading && (
-          <div className="flex gap-2">
-            <div className="w-7 h-7 bg-primary-100 rounded-full flex items-center justify-center">
-              <Bot className="w-3.5 h-3.5 text-primary-600" />
-            </div>
-            <div className="bg-white border border-gray-200 px-3 py-2 rounded-xl flex gap-1 items-center">
-              <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-            </div>
-          </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Suggestions */}
-      {messages.length === 1 && (
-        <div className="px-4 pb-2 flex flex-wrap gap-1.5">
-          {suggestions.map(s => (
-            <button key={s} onClick={() => setInput(s)}
-              className="text-xs bg-primary-50 text-primary-700 border border-primary-200 rounded-full px-3 py-1 hover:bg-primary-100 transition-colors">
-              {s}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Input */}
-      <div className="p-3 border-t flex gap-2">
-        <input value={input} onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
-          className="input flex-1 text-sm" placeholder="Nhập câu hỏi..." />
-        <button onClick={send} disabled={!input.trim() || loading}
-          className="btn-primary px-3 disabled:opacity-40">
-          <Send className="w-4 h-4" />
+    <div className="inline-flex items-center p-1 bg-slate-100/80 rounded-xl border border-slate-200/50 w-full sm:w-auto overflow-x-auto">
+      {options.map(opt => (
+        <button key={opt.id} onClick={() => onChange(opt.id as TimeFilter)}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 whitespace-nowrap flex-1 sm:flex-none ${active === opt.id ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'}`}>
+          {opt.label}
         </button>
-      </div>
+      ))}
     </div>
   );
-}
+};
 
 // ═══════════════════════════════════════════════════════════════
 export default function DashboardPage() {
   const { user, isCashier, isAdmin } = useAuthStore();
-  const [showAI, setShowAI] = useState(false);
   const qc = useQueryClient();
-
   const isStaff = isCashier();
 
-  // ── WebSocket real-time ──────────────────────────────────────
-  // warehouseId từ JWT: MANAGER có giá trị, ADMIN có thể null
-  // Nếu null → hook tự bỏ qua, polling vẫn chạy như backup
+  // 1. STATES BỘ LỌC TÍCH HỢP
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('30d');
+  
+  // KHỞI TẠO STATE AN TOÀN CHO MANAGER
+  const [warehouseId, setWarehouseId] = useState<string>(() => {
+    if (isAdmin()) return '';
+    return user?.warehouseId || '';
+  });
+
+  const dateRange = {
+    '7d':       { from: subDays(new Date(), 7).toISOString(),   to: new Date().toISOString(), period: 'day' },
+    '30d':      { from: subDays(new Date(), 30).toISOString(),  to: new Date().toISOString(), period: 'day' },
+    '3m':       { from: subMonths(new Date(), 3).toISOString(), to: new Date().toISOString(), period: 'week' },
+    'thisYear': { from: startOfYear(new Date()).toISOString(),  to: new Date().toISOString(), period: 'month' },
+  }[timeFilter];
+
+  // 2. WEBSOCKET REAL-TIME
   const { isConnected: wsConnected } = useDashboardWebSocket({
     warehouseId: user?.warehouseId,
     enabled: !isStaff,
   });
 
-  // Theo dõi shiftId đang trong quá trình duyệt để disable đúng nút
-  const [approvingShiftId, setApprovingShiftId] = useState<string | null>(null);
+  const queryWarehouseId = warehouseId || undefined;
 
-  // Mutation duyệt ca — mỗi nút "Duyệt" sẽ truyền shiftId vào đây
-  const approveMutation = useMutation({
-    mutationFn: (shiftId: string) => posService.approveShift(shiftId),
-    onSuccess: (_, shiftId) => {
-      toast.success('Đã duyệt ca thành công');
-      // Xoá ca vừa duyệt khỏi danh sách ngay lập tức (optimistic-ish)
-      qc.invalidateQueries({ queryKey: ['pending-shifts-dashboard'] });
-      qc.invalidateQueries({ queryKey: ['cash-balance-dashboard'] }); // số dư có thể thay đổi
-    },
-    onError: () => {
-      toast.error('Duyệt ca thất bại, vui lòng thử lại');
-    },
+  // 3. QUERIES DỮ LIỆU
+  const { data: warehouses } = useQuery({
+    queryKey: ['warehouses-dict'],
+    queryFn: () => warehouseService.getAll().then(r => r.data.data),
+    enabled: isAdmin(),
   });
 
-  // Handler duyệt ca — gọi mutation và quản lý loading state
-  const handleApproveShift = (shiftId: string) => {
-    setApprovingShiftId(shiftId);
-    approveMutation.mutate(shiftId, {
-      onSettled: () => setApprovingShiftId(null),
-    });
+  // Lợi nhuận gộp & Doanh thu 
+  const { data: revenueData, isLoading: loadingRevenue } = useQuery({
+    queryKey: ['revenue', timeFilter, queryWarehouseId],
+    queryFn: () => reportService.getRevenue({ ...dateRange, warehouseId: queryWarehouseId }).then(r => r.data.data),
+    enabled: !isStaff,
+  });
+
+  // Giá trị tồn kho
+  const { data: inventoryValueData } = useQuery({
+    queryKey: ['inventory-value', queryWarehouseId],
+    queryFn: () => reportService.getInventoryValue(queryWarehouseId).then(r => r.data.data),
+    enabled: !isStaff,
+  });
+
+  // Hàng tồn đọng
+  const { data: deadStockList } = useQuery({
+    queryKey: ['dead-stock', queryWarehouseId],
+    queryFn: () => reportService.getDeadStock({ days: 90, warehouseId: queryWarehouseId }).then(r => Array.isArray(r.data?.data) ? r.data.data : []),
+    enabled: !isStaff,
+  });
+
+  const { data: topProducts } = useQuery({
+    queryKey: ['top-products', timeFilter, queryWarehouseId],
+    queryFn: () => reportService.getTopProducts({ ...dateRange, limit: 10, warehouseId: queryWarehouseId }).then(r => r.data.data),
+    enabled: !isStaff,
+  });
+
+  // Các Widget phụ: Sổ quỹ, Ca chờ duyệt, Công nợ, Audit Logs
+  const { data: cashBalance } = useQuery({
+    queryKey: ['cash-balance', queryWarehouseId],
+    queryFn: () => financeService.getCashbookBalance(queryWarehouseId).then(r => r.data.data),
+    enabled: !isStaff,
+  });
+
+  const { data: pendingShifts } = useQuery({
+    queryKey: ['pending-shifts', queryWarehouseId],
+    queryFn: () => posService.getPendingShifts().then(r => r.data.data),
+    enabled: !isStaff,
+  });
+
+  const { data: supplierDebts } = useQuery({
+    queryKey: ['supplier-debts', queryWarehouseId],
+    queryFn: () => financeService.getOutstandingDebts(queryWarehouseId).then(r => {
+        const raw = r.data?.data ?? [];
+        return [...raw].sort((a: any, b: any) => b.remainingAmount - a.remainingAmount).slice(0, 5);
+      }),
+    enabled: !isStaff,
+  });
+
+  const { data: auditLogs } = useQuery({
+    queryKey: ['audit-logs'],
+    queryFn: () => adminService.getAuditLogs(10).then(r => r.data.data),
+    enabled: !isStaff && isAdmin(),
+  });
+
+  const handleApproveShift = async (shiftId: string) => {
+    try {
+      await posService.approveShift(shiftId);
+      toast.success('Đã duyệt ca thành công');
+      qc.invalidateQueries({ queryKey: ['pending-shifts'] });
+      qc.invalidateQueries({ queryKey: ['cash-balance'] });
+    } catch (e) { toast.error('Lỗi khi duyệt ca'); }
   };
 
-  const { data: summary, isLoading: loadingSummary } = useQuery<DashboardSummary>({
-    queryKey: ['report-summary'],
-    queryFn: () => reportService.getSummary().then(r => r.data.data as DashboardSummary),
-    refetchInterval: 60_000,
-    enabled: !isStaff,
+  if (loadingRevenue && !isStaff) return <PageLoader />;
+
+  // Xử lý data KPI
+  const totalRevenue = (revenueData ?? []).reduce((s: number, d: any) => s + Number(d.revenue ?? 0), 0);
+  const totalGrossProfit = (revenueData ?? []).reduce((s: number, d: any) => s + Number(d.gross_profit ?? 0), 0);
+  const margin = totalRevenue > 0 ? ((totalGrossProfit / totalRevenue) * 100).toFixed(1) : '0.0';
+  const totalOrders = (revenueData ?? []).reduce((s: number, d: any) => s + Number(d.invoice_count ?? 0), 0);
+  
+  const safeInventoryData = Array.isArray(inventoryValueData) ? inventoryValueData : [];
+  const totalInvValue = safeInventoryData.reduce((sum, item) => sum + Number(item.total_value ?? 0), 0);
+
+  // Tính tổng quỹ cục bộ
+  const totalFund = (cashBalance?.CASH_111 || 0) + (cashBalance?.BANK_112 || 0);
+
+  const chartData = (revenueData ?? []).map((d: any) => {
+    let nameFormat = 'dd/MM';
+    if (dateRange.period === 'month') nameFormat = 'MM/yyyy';
+    else if (dateRange.period === 'week') nameFormat = "'Tuần' w, yyyy";
+    return {
+      dateRaw: d.period,
+      name: d.period ? format(new Date(d.period), nameFormat) : '',
+      revenue: Number(d.revenue ?? 0),
+      gross_profit: Number(d.gross_profit ?? 0),
+    };
   });
 
-  const revenueTodayAmount: number = summary?.revenueToday?.[0]?.revenue ?? 0;
-  const grossProfitToday: number  = summary?.revenueToday?.[0]?.gross_profit ?? 0;
-  const invoiceCountToday: number = summary?.revenueToday?.[0]?.invoice_count ?? 0;
-
-  const { data: pendingOrders } = useQuery({
-    queryKey: ['orders-pending-dashboard'],
-    queryFn: () => orderService.getOrders({ status: 'PENDING', page: 0, size: 5 }).then(r => r.data.data),
-    enabled: !isStaff,
-  });
-
-  const { data: lowStock } = useQuery<LowStockItem[]>({
-    queryKey: ['low-stock-dashboard'],
-    queryFn: () => inventoryService.getLowStock().then(r => r.data.data as LowStockItem[]),
-    enabled: !isStaff,
-  });
-
-  const { data: pendingShifts } = useQuery<ShiftResponse[]>({
-    queryKey: ['pending-shifts-dashboard'],
-    queryFn: () => posService.getPendingShifts().then(r => r.data.data as ShiftResponse[]),
-    refetchInterval: 30_000,   // refresh nhanh hơn vì đây là dữ liệu action
-    enabled: !isStaff,
-  });
-
-  const { data: revenueData } = useQuery({
-    queryKey: ['revenue-7d'],
-    queryFn: () => reportService.getRevenue({
-      from: subDays(new Date(), 7).toISOString(),
-      to: new Date().toISOString(),
-      period: 'day',
-    }).then(r => r.data.data),
-    enabled: !isStaff,
-  });
-
-  // Số dư quỹ tiền mặt — MANAGER thấy kho mình, ADMIN thấy theo JWT
-  const { data: cashBalance } = useQuery<CashBalance>({
-    queryKey: ['cash-balance-dashboard'],
-    queryFn: () => financeService.getCashbookBalance().then(r => r.data.data as CashBalance),
-    refetchInterval: 60_000,
-    enabled: !isStaff,
-  });
-
-  // Top 5 sản phẩm bán chạy hôm nay
-  const todayStart = startOfDay(new Date()).toISOString();
-  const todayNow   = new Date().toISOString();
-
-  const { data: topProducts } = useQuery<TopProductItem[]>({
-    queryKey: ['top-products-dashboard', todayStart],
-    queryFn: () =>
-      reportService.getTopProducts({
-        from: todayStart,
-        to: todayNow,
-        limit: 5,
-      }).then(r => {
-        const raw = r.data?.data ?? r.data ?? [];
-        return Array.isArray(raw) ? (raw as TopProductItem[]) : [];
-      }),
-    refetchInterval: 60_000,
-    enabled: !isStaff,
-  });
-
-  // Công nợ nhà cung cấp chưa thanh toán
-  // MANAGER → backend tự scope theo kho JWT
-  // ADMIN   → backend lấy tất cả (warehouseId null → findAll not PAID)
-  const { data: supplierDebts } = useQuery<SupplierDebtItem[]>({
-    queryKey: ['supplier-debts-dashboard'],
-    queryFn: () =>
-      financeService.getOutstandingDebts()
-        .then(r => {
-          const raw = r.data?.data ?? [];
-          // Sắp xếp theo remainingAmount giảm dần, lấy top 5
-          return [...raw as SupplierDebtItem[]]
-            .sort((a, b) => b.remainingAmount - a.remainingAmount)
-            .slice(0, 5);
-        }),
-    refetchInterval: 60_000,
-    enabled: !isStaff,
-  });
-
-  // Audit log — CHỈ gọi khi là ADMIN, lấy 12 bản ghi gần nhất
-  const { data: auditLogs } = useQuery<AuditLogResponse[]>({
-    queryKey: ['audit-logs-dashboard'],
-    queryFn: () =>
-      adminService.getAuditLogs(12).then(r => r.data.data as AuditLogResponse[]),
-    refetchInterval: 30_000,
-    enabled: !isStaff && isAdmin(),   // chỉ ADMIN mới gọi
-  });
-
-  if (loadingSummary && !isStaff) return <PageLoader />;
-
-  const chartData = (revenueData ?? []).map((d: any) => ({
-    name: d.period ? format(new Date(d.period), 'dd/MM') : '',
-    'Doanh thu': Math.round((d.revenue ?? 0) / 1000),
-    'Lợi nhuận': Math.round((d.gross_profit ?? 0) / 1000),
+  const topProductsData = (topProducts ?? []).map((d: any) => ({
+    name: String(d.name ?? 'SP').substring(0, 30) + (String(d.name).length > 30 ? '...' : ''),
+    'Số lượng': Number(d.total_sold ?? 0),
   }));
 
+  console.info("React DevTools message can be safely ignored in production.");
+
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Welcome */}
-      <div className="flex items-center justify-between flex-wrap gap-2">
+    <div className="space-y-6 animate-fade-in pb-12 max-w-[1600px] mx-auto">
+      
+      {/* ── HEADER ── */}
+      <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 bg-white p-5 rounded-2xl shadow-sm border border-slate-100 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50/50 rounded-full blur-3xl -z-10 -mr-20 -mt-20"></div>
+        
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">Xin chào, {user?.fullName} 👋</h2>
-          <p className="text-gray-500 text-sm mt-0.5">
-            {user?.warehouseName ?? 'Tổng quan toàn hệ thống'} • {format(new Date(), 'EEEE, dd/MM/yyyy')}
+          <h1 className="text-2xl font-extrabold text-slate-900 flex items-center gap-3 tracking-tight">
+            Tổng quan Kinh doanh
+            {queryWarehouseId && !isStaff && (
+              <span className={`flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full border font-bold uppercase tracking-wider ${wsConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} /> Live
+              </span>
+            )}
+          </h1>
+          <p className="text-sm text-slate-500 mt-1.5 font-medium flex items-center gap-1.5">
+            <Activity className="w-4 h-4" /> Dữ liệu được cập nhật tự động theo thời gian thực
           </p>
         </div>
 
-        {/* WS Status badge — chỉ hiện khi có warehouseId */}
-        {user?.warehouseId && !isStaff && (
-          <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border font-medium
-            ${wsConnected
-              ? 'bg-green-50 text-green-700 border-green-200'
-              : 'bg-gray-50 text-gray-400 border-gray-200'
-            }`}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`} />
-            {wsConnected ? 'Cập nhật tức thì' : 'Đang kết nối...'}
+        {!isStaff && (
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full xl:w-auto">
+            {isAdmin() && (
+              <div className="flex items-center gap-2 bg-slate-50 px-3 py-2.5 rounded-xl border border-slate-200/60 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-indigo-500 transition-all">
+                <Building2 className="w-4 h-4 text-slate-400 shrink-0" />
+                <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} className="bg-transparent border-none text-sm font-semibold text-slate-700 focus:ring-0 cursor-pointer p-0 pr-6 w-full outline-none">
+                  <option value="">Tất cả Chi nhánh</option>
+                  {warehouses?.map((w: any) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                </select>
+              </div>
+            )}
+            <TimeFilterGroup active={timeFilter} onChange={setTimeFilter} />
           </div>
         )}
       </div>
 
       {isStaff ? (
-        <div className="card p-8 text-center text-gray-500 mt-6">
-          <p className="text-lg">Bạn đang đăng nhập với quyền <strong>Thu ngân</strong>.</p>
-          <p className="text-sm mt-2">Vui lòng điều hướng tới màn hình Bán hàng (POS) để thực hiện nghiệp vụ.</p>
-          <Link to="/pos" className="btn-primary inline-flex mt-6 px-6 py-2 rounded-lg text-white">
-            Đi đến màn hình Bán hàng <ChevronRight className="w-4 h-4 ml-1" />
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-12 flex flex-col items-center justify-center text-center mt-6">
+          <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mb-6">
+            <UserCheck className="w-10 h-10 text-indigo-500" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Xin chào Thu ngân!</h2>
+          <p className="text-slate-500 mb-8 max-w-md">Bạn đang đăng nhập với quyền thu ngân. Chuyển đến màn hình bán hàng để bắt đầu ca làm việc.</p>
+          <Link to="/pos" className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold inline-flex items-center px-8 py-3 rounded-xl transition-all shadow-md shadow-indigo-600/20 hover:-translate-y-0.5">
+            Vào Màn hình Bán hàng (POS) <ChevronRight className="w-5 h-5 ml-2" />
           </Link>
         </div>
       ) : (
         <>
-          {/* KPI Cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <KPICard 
-              icon={DollarSign}    
-              label="Doanh thu hôm nay"    
-              value={formatCurrency(revenueTodayAmount)} 
-              sub={`${invoiceCountToday} hóa đơn • Lãi gộp: ${formatCurrency(grossProfitToday)}`}  
-              color="bg-primary-500" 
-            />
-            <KPICard icon={ShoppingBag}   label="Đơn hàng mới"         value={String(pendingOrders?.totalElements ?? 0)} sub="Đang chờ xử lý" color="bg-amber-500" />
-            <KPICard icon={AlertTriangle} label="Tồn kho thấp"         value={String(lowStock?.length ?? 0)} sub="Sản phẩm" color="bg-red-500" />
-            <KPICard icon={Clock}         label="Ca chờ duyệt"         value={String(pendingShifts?.length ?? 0)} sub="Cần Manager xem" color="bg-purple-500" />
+          {/* ── DÀN THẺ KPI ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+            {[
+              { label: 'Doanh thu', value: formatCurrency(totalRevenue), icon: Wallet, color: 'text-indigo-600', bg: 'bg-indigo-50', ring: 'ring-indigo-100' },
+              { label: 'Lợi nhuận gộp', value: formatCurrency(totalGrossProfit), subLabel: `Biên LN: ${margin}%`, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50', ring: 'ring-emerald-100', subColor: 'text-emerald-600 bg-emerald-100/50' },
+              { label: 'Giá trị tồn kho', value: formatCurrency(totalInvValue), icon: PackageOpen, color: 'text-amber-600', bg: 'bg-amber-50', ring: 'ring-amber-100' },
+              { label: 'Đơn hoàn tất', value: totalOrders.toLocaleString('vi-VN'), icon: ShoppingCart, color: 'text-blue-600', bg: 'bg-blue-50', ring: 'ring-blue-100' },
+              { label: `Số dư quỹ ${queryWarehouseId ? '(Chi nhánh)' : '(Toàn bộ)'}`, value: formatCurrency(totalFund), icon: Landmark, color: 'text-purple-600', bg: 'bg-purple-50', ring: 'ring-purple-100' },
+            ].map((kpi, i) => (
+              <div key={i} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] flex items-center gap-4 transition-all hover:shadow-lg hover:-translate-y-1 relative overflow-hidden group">
+                <div className={`p-3.5 rounded-xl ${kpi.bg} ${kpi.color} ring-4 ${kpi.ring} transition-transform group-hover:scale-110`}>
+                  <kpi.icon className="w-6 h-6" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-semibold text-slate-500 truncate mb-1">{kpi.label}</p>
+                  {/* GIẢM SIZE VÀ TRACKING-TIGHT CHO KPI */}
+                  <h3 className="text-base lg:text-lg font-bold tracking-tight text-slate-900 truncate">{kpi.value}</h3>
+                  {kpi.subLabel && <span className={`inline-block mt-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold ${kpi.subColor}`}>{kpi.subLabel}</span>}
+                </div>
+              </div>
+            ))}
           </div>
 
-          {/* Charts + Quỹ row */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-            {/* Revenue chart — chiếm 2/4 cột */}
-            <div className="card lg:col-span-2">
-              <div className="card-header">
-                <h3 className="font-semibold text-gray-800">Doanh thu 7 ngày qua (nghìn đồng)</h3>
+          {/* ── BIỂU ĐỒ & BẢNG CHI TIẾT (TỶ LỆ VÀNG 2:1) ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Biểu đồ */}
+            <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-lg font-bold text-slate-900">Doanh thu & Lợi nhuận</h2>
               </div>
-              <div className="p-4">
-                {chartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                      <YAxis tick={{ fontSize: 11 }} />
-                      <Tooltip formatter={(v: number) => `${v}k đ`} />
-                      <Line type="monotone" dataKey="Doanh thu" stroke="#2563eb" strokeWidth={2} dot={false} />
-                      <Line type="monotone" dataKey="Lợi nhuận" stroke="#16a34a" strokeWidth={2} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <EmptyState icon={TrendingUp} title="Chưa có dữ liệu doanh thu" />
-                )}
+              <div className="h-[360px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b', fontWeight: 500 }} axisLine={false} tickLine={false} dy={10} />
+                    <YAxis tickFormatter={(val) => `${(val / 1000000).toFixed(0)}M`} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 500 }} axisLine={false} tickLine={false} />
+                    <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: '#f8fafc' }} />
+                    <Legend wrapperStyle={{ paddingTop: '20px', fontSize: '13px', fontWeight: 600, color: '#475569' }} iconType="circle" />
+                    <Bar dataKey="revenue" name="Doanh thu" fill="#6366f1" radius={[6, 6, 0, 0]} maxBarSize={45} />
+                    <Line type="monotone" dataKey="gross_profit" name="Lợi nhuận gộp" stroke="#10b981" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#fff' }} activeDot={{ r: 6, fill: '#10b981', stroke: '#fff', strokeWidth: 2 }} />
+                  </ComposedChart>
+                </ResponsiveContainer>
               </div>
             </div>
 
-            {/* Số dư quỹ — chiếm 1/4 cột */}
-            <CashBalanceWidget balance={cashBalance} />
-
-            {/* Ca chờ duyệt — có nút Duyệt ngay */}
-            <PendingShiftsWidget
-              shifts={pendingShifts as ShiftResponse[] | undefined}
-              onApprove={handleApproveShift}
-              approvingId={approvingShiftId}
-            />
+            {/* Bảng dữ liệu kỳ này */}
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col h-[456px] overflow-hidden">
+              <div className="p-5 border-b border-slate-50 flex items-center gap-2 bg-slate-50/50">
+                <FileText className="w-5 h-5 text-indigo-500"/>
+                <h2 className="text-base font-bold text-slate-900">Bảng dữ liệu kỳ này</h2>
+              </div>
+              <div className="flex-1 overflow-x-auto custom-scrollbar p-2">
+                <table className="w-full text-sm text-left min-w-[350px]">
+                  <thead className="text-xs text-slate-500 uppercase font-bold sticky top-0 bg-white/90 backdrop-blur z-10">
+                    <tr>
+                      <th className="px-4 py-3 border-b border-slate-100">Thời gian</th>
+                      <th className="px-4 py-3 text-right border-b border-slate-100">Doanh thu</th>
+                      <th className="px-4 py-3 text-right border-b border-slate-100">Lãi gộp</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {chartData.length === 0 ? (
+                      <tr><td colSpan={3} className="text-center py-12 text-slate-400 font-medium">Không có dữ liệu</td></tr>
+                    ) : (
+                      chartData.slice().reverse().map((row, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/80 transition-colors group">
+                          <td className="px-4 py-3.5 text-slate-700 font-semibold group-hover:text-indigo-600 transition-colors">{row.name}</td>
+                          <td className="px-4 py-3.5 text-right text-indigo-600 font-bold tracking-tight">{formatCurrency(row.revenue)}</td>
+                          <td className="px-4 py-3.5 text-right text-emerald-600 font-bold tracking-tight">{formatCurrency(row.gross_profit)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
 
-          {/* Orders + Top Products + Low stock row */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-            {/* Đơn hàng chờ xử lý */}
-            <div className="card">
-              <div className="card-header">
-                <h3 className="font-semibold text-gray-800">Đơn hàng chờ xử lý</h3>
-                <Link to="/orders" className="text-primary-600 text-sm hover:underline">Xem tất cả</Link>
+          {/* ── CẢNH BÁO TỒN KHO & TOP SẢN PHẨM (TỶ LỆ 1:1) ── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            {/* Hàng tồn đọng / sắp hết */}
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col h-[400px] overflow-hidden">
+              <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-rose-50/30">
+                <div className="flex items-center gap-2.5 text-rose-600">
+                  <div className="p-1.5 bg-rose-100 rounded-lg"><AlertTriangle className="w-5 h-5" /></div>
+                  <h2 className="text-base font-bold text-slate-900">Cảnh báo Tồn đọng <span className="text-slate-500 font-medium text-sm ml-1">(&gt;90 ngày)</span></h2>
+                </div>
               </div>
-              <div className="divide-y divide-gray-100">
-                {(pendingOrders?.content ?? []).length === 0 ? (
-                  <EmptyState icon={ShoppingBag} title="Không có đơn hàng chờ" />
-                ) : (
-                  (pendingOrders?.content ?? []).slice(0, 5).map((o: any) => (
-                    <Link to={`/orders/${o.id}`} key={o.id}
-                      className="flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
-                      <div>
-                        <p className="text-sm font-medium text-gray-700">{o.code}</p>
-                        <p className="text-xs text-gray-400">{o.customerName} • {formatDateTime(o.createdAt)}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-primary-600">{formatCurrency(o.finalAmount)}</span>
-                        <span className={`badge text-xs ${getOrderStatusColor(o.status)}`}>{getOrderStatusLabel(o.status)}</span>
-                      </div>
-                    </Link>
-                  ))
-                )}
+              <div className="flex-1 overflow-x-auto custom-scrollbar p-2">
+                <table className="w-full text-sm text-left min-w-[500px]">
+                  <thead className="text-xs text-slate-500 font-bold sticky top-0 bg-white z-10">
+                    <tr>
+                      <th className="px-4 py-3 border-b border-slate-100">Tên Sản phẩm</th>
+                      <th className="px-4 py-3 text-center border-b border-slate-100">SKU</th>
+                      <th className="px-4 py-3 text-right border-b border-slate-100">Số lượng Tồn</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {!deadStockList || deadStockList.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="text-center py-16">
+                           <CheckCircle className="w-10 h-10 mx-auto text-emerald-400 mb-3" />
+                           <p className="text-slate-500 font-medium">Kho hàng đang luân chuyển rất tốt</p>
+                        </td>
+                      </tr>
+                    ) : (
+                      deadStockList.slice(0,10).map((item: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-rose-50/50 transition-colors">
+                          <td className="px-4 py-3 font-semibold text-slate-800">{item.product_name || item.productName}</td>
+                          <td className="px-4 py-3 text-center text-slate-500 font-mono text-xs">{item.sku || item.isbn_barcode || '-'}</td>
+                          <td className="px-4 py-3 text-right"><span className="inline-block px-3 py-1 bg-rose-100 text-rose-700 font-bold rounded-lg">{item.quantity ?? item.stock_qty ?? 0}</span></td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            {/* Top sản phẩm bán chạy hôm nay */}
-            <TopProductsWidget items={topProducts} />
-
-            {/* Cảnh báo tồn kho thấp */}
-            <div className="card">
-              <div className="card-header">
-                <h3 className="font-semibold text-gray-800 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-500" /> Cảnh báo tồn kho thấp
-                </h3>
-                <Link to="/inventory" className="text-primary-600 text-sm hover:underline">Xem kho</Link>
+            {/* Top Sản phẩm */}
+            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm flex flex-col h-[400px] overflow-hidden">
+              <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-amber-50/30">
+                <div className="flex items-center gap-2.5 text-amber-600">
+                  <div className="p-1.5 bg-amber-100 rounded-lg"><Trophy className="w-5 h-5" /></div>
+                  <h2 className="text-base font-bold text-slate-900">Top 10 Sản phẩm Bán chạy</h2>
+                </div>
               </div>
-              <div className="divide-y divide-gray-100">
-                {(lowStock ?? []).length === 0 ? (
-                  <div className="p-4 text-center text-gray-400 text-sm py-8">
-                    <CheckCircle className="w-8 h-8 mx-auto mb-2 text-green-400" />
-                    Tất cả sản phẩm đủ hàng
+              <div className="flex-1 overflow-x-auto custom-scrollbar p-2">
+                <table className="w-full text-sm text-left min-w-[500px]">
+                  <thead className="text-xs text-slate-500 font-bold sticky top-0 bg-white z-10">
+                    <tr>
+                      <th className="px-4 py-3 border-b border-slate-100 w-12 text-center">Hạng</th>
+                      <th className="px-4 py-3 border-b border-slate-100">Sản phẩm</th>
+                      <th className="px-4 py-3 text-right border-b border-slate-100">Đã bán</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {topProductsData.length === 0 ? (
+                      <tr><td colSpan={3} className="text-center py-16 text-slate-400 font-medium">Chưa có dữ liệu giao dịch</td></tr>
+                    ) : (
+                      topProductsData.map((item: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-amber-50/30 transition-colors">
+                          <td className="px-4 py-3 text-center">
+                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${idx < 3 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                              {idx + 1}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-semibold text-slate-800">{item.name}</td>
+                          <td className="px-4 py-3 text-right font-black text-indigo-600 tracking-tight">{item['Số lượng']}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* ── WIDGETS VẬN HÀNH (1:1:1) ── */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+             {/* Component Sổ quỹ */}
+             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+                <div className="p-4 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                  <h3 className="font-bold text-slate-900 flex items-center gap-2"><Wallet className="w-4 h-4 text-emerald-500" /> Sổ quỹ</h3>
+                  <Link to="/finance" className="text-indigo-600 text-sm font-semibold hover:underline">Chi tiết</Link>
+                </div>
+                <div className="p-5 flex-1 flex flex-col justify-center space-y-4">
+                  <div className="flex items-center gap-4 p-4 rounded-xl bg-emerald-50/50 border border-emerald-100/50">
+                    <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm border border-emerald-100"><Banknote className="w-5 h-5 text-emerald-500" /></div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-slate-500 mb-0.5">Tiền mặt (TK 111)</p>
+                      {/* GIẢM SIZE VÀ TRACKING-TIGHT CHO QUỸ */}
+                      <p className="text-base font-black tracking-tight text-emerald-700 truncate">{formatCurrency(cashBalance?.CASH_111 ?? 0)}</p>
+                    </div>
                   </div>
-                ) : (
-                  (lowStock ?? []).slice(0, 6).map((inv) => {
-                    const pct    = inv.minQuantity > 0 ? Math.round((inv.quantity / inv.minQuantity) * 100) : 100;
-                    const danger = pct <= 50;
-                    return (
-                      <div key={inv.inventoryId} className="px-4 py-3 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Package className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-gray-700 truncate" title={inv.productName}>
-                              {inv.productName}
-                            </p>
-                            <p className="text-xs text-gray-400">
-                              SKU: {inv.productSku} • Tồn:{' '}
-                              <span className={danger ? 'text-red-600 font-semibold' : 'text-amber-600 font-semibold'}>
-                                {inv.quantity}
-                              </span>{' '}
-                              / Min: {inv.minQuantity}
-                            </p>
-                          </div>
+                  <div className="flex items-center gap-4 p-4 rounded-xl bg-blue-50/50 border border-blue-100/50">
+                    <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm border border-blue-100"><Landmark className="w-5 h-5 text-blue-500" /></div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-slate-500 mb-0.5">Ngân hàng (TK 112)</p>
+                      {/* GIẢM SIZE VÀ TRACKING-TIGHT CHO QUỸ */}
+                      <p className="text-base font-black tracking-tight text-blue-700 truncate">{formatCurrency(cashBalance?.BANK_112 ?? 0)}</p>
+                    </div>
+                  </div>
+                </div>
+             </div>
+
+             {/* Ca chờ duyệt */}
+             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+                <div className="p-4 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                  <h3 className="font-bold text-slate-900 flex items-center gap-2"><UserCheck className="w-4 h-4 text-purple-500" /> Ca chờ duyệt</h3>
+                  <Link to="/pos" className="text-indigo-600 text-sm font-semibold hover:underline">Trang POS</Link>
+                </div>
+                <div className="divide-y divide-slate-50 flex-1 overflow-y-auto custom-scrollbar h-[200px]">
+                  {(!pendingShifts || pendingShifts.length === 0) ? (
+                    <div className="h-full flex flex-col items-center justify-center p-6 text-slate-400">
+                      <CheckCircle className="w-10 h-10 mb-3 text-emerald-400" />
+                      <p className="text-sm font-medium">Tất cả các ca đã được duyệt</p>
+                    </div>
+                  ) : (
+                    pendingShifts.map((s: any) => (
+                      <div key={s.id} className="p-4 flex justify-between items-center hover:bg-slate-50 transition-colors">
+                        <div className="flex-1 min-w-0 pr-2">
+                          <p className="text-sm font-bold text-slate-800 truncate">{s.cashierName ?? 'Thu ngân'}</p>
+                          <p className="text-xs font-medium text-slate-500 flex items-center gap-1 mt-0.5"><Clock className="w-3 h-3"/> {formatDateTime(s.closedAt ?? s.openedAt)}</p>
+                          {s.discrepancyAmount !== 0 && <p className={`text-xs font-bold mt-1.5 inline-block px-2 py-0.5 rounded tracking-tight ${s.discrepancyAmount > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>Lệch: {formatCurrency(s.discrepancyAmount)}</p>}
                         </div>
-                        <span className={`badge text-xs flex-shrink-0 ${danger ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
-                          {danger ? 'Nguy hiểm' : 'Thấp'}
-                        </span>
+                        <button onClick={() => handleApproveShift(s.id)} className="bg-purple-100 text-purple-700 hover:bg-purple-600 hover:text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm shrink-0">Duyệt Ca</button>
                       </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
+                    ))
+                  )}
+                </div>
+             </div>
 
+             {/* Công nợ */}
+             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col">
+                <div className="p-4 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                  <h3 className="font-bold text-slate-900 flex items-center gap-2"><CreditCard className="w-4 h-4 text-rose-500" /> Công nợ NCC</h3>
+                  <Link to="/finance" className="text-indigo-600 text-sm font-semibold hover:underline">Thanh toán</Link>
+                </div>
+                <div className="divide-y divide-slate-50 flex-1 overflow-y-auto custom-scrollbar h-[200px]">
+                  {(!supplierDebts || supplierDebts.length === 0) ? (
+                    <div className="h-full flex flex-col items-center justify-center p-6 text-slate-400">
+                      <CheckCircle className="w-10 h-10 mb-3 text-emerald-400" />
+                      <p className="text-sm font-medium">Không có công nợ cần thanh toán</p>
+                    </div>
+                  ) : (
+                    supplierDebts.map((d: any) => (
+                      <div key={d.id} className="p-4 flex justify-between items-start hover:bg-slate-50 transition-colors">
+                        <div className="flex-1 pr-4 min-w-0">
+                          <p className="text-sm font-bold text-slate-800 line-clamp-1" title={d.supplierName}>{d.supplierName || 'Nhà cung cấp'}</p>
+                          <p className="text-xs font-medium text-slate-500 mt-0.5 truncate">{d.purchaseOrderCode}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-sm font-black text-rose-600 tracking-tight">{formatCurrency(d.remainingAmount)}</p>
+                          <p className="text-[11px] font-semibold text-slate-400 mt-1">Hạn: {d.dueDate ? new Date(d.dueDate).toLocaleDateString('vi-VN') : '---'}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+             </div>
           </div>
-
-          {/* Row cuối: Công nợ NCC | Audit Log (Admin only) */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-            {/* Công nợ NCC — 1/3 */}
-            <SupplierDebtsWidget debts={supplierDebts} />
-
-            {/* Audit Log — 2/3, CHỈ hiện với ADMIN */}
-            {isAdmin() ? (
-              <div className="lg:col-span-2">
-                <AuditLogWidget logs={auditLogs} />
-              </div>
-            ) : (
-              <div className="lg:col-span-2" />
-            )}
-
-          </div>
+          
+          {/* Audit Logs cho Admin */}
+          {isAdmin() && auditLogs && auditLogs.length > 0 && (
+             <div className="bg-white rounded-2xl border border-slate-100 shadow-sm mt-6 overflow-hidden">
+               <div className="p-4 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                 <h3 className="font-bold text-slate-900 flex items-center gap-2"><History className="w-4 h-4 text-slate-500" /> Nhật ký Hoạt động hệ thống</h3>
+                 <Link to="/settings" className="text-indigo-600 text-sm font-semibold hover:underline">Xem tất cả</Link>
+               </div>
+               <div className="p-5 space-y-4">
+                 {auditLogs.slice(0,5).map((log: any, idx: number) => (
+                   <div key={idx} className="flex gap-4 text-sm group">
+                     <div className="flex flex-col items-center">
+                       <div className="w-2.5 h-2.5 rounded-full bg-indigo-200 group-hover:bg-indigo-500 transition-colors mt-1.5 shadow-sm"/>
+                       {idx !== auditLogs.slice(0,5).length - 1 && <div className="w-px h-full bg-slate-100 mt-2"></div>}
+                     </div>
+                     <div className="flex-1 pb-4">
+                       <p className="text-slate-700 leading-relaxed">
+                         <span className="font-bold text-slate-900 mr-1.5">{log.changedBy}</span>
+                         thực hiện <span className="font-semibold text-indigo-600 mx-1">{log.actionType}</span> 
+                         trên <span className="font-medium text-slate-800">{log.entityName}</span>
+                       </p>
+                       <p className="text-xs font-medium text-slate-400 mt-1">{formatTimeAgo(log.changedAt)}</p>
+                     </div>
+                   </div>
+                 ))}
+               </div>
+             </div>
+          )}
         </>
       )}
-
-      {/* AI Chat toggle button */}
-      {!showAI && (
-        <button
-          onClick={() => setShowAI(true)}
-          className="fixed right-6 bottom-6 w-14 h-14 bg-primary-600 hover:bg-primary-700 text-white rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 z-40"
-        >
-          <MessageSquare className="w-6 h-6" />
-        </button>
-      )}
-      {showAI && <AIChatPanel onClose={() => setShowAI(false)} />}
     </div>
   );
+}
+
+// Hàm bổ trợ thời gian
+function formatTimeAgo(isoStr: string) {
+  const diff = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
+  if (diff < 60) return `${diff}s trước`;
+  if (diff < 3600) return `${Math.floor(diff / 60)} phút trước`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} giờ trước`;
+  return format(new Date(isoStr), 'dd/MM HH:mm');
 }

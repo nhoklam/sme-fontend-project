@@ -68,6 +68,7 @@ export function getOrderStatusLabel(status: string): string {
     DELIVERED: 'Đã giao',
     CANCELLED: 'Đã hủy',
     RETURNED:  'Hoàn trả',
+    WAITING_FOR_CONSOLIDATION: 'Chờ gom hàng',
   };
   return map[status] ?? status;
 }
@@ -80,6 +81,7 @@ export function getOrderStatusColor(status: string): string {
     DELIVERED: 'bg-green-100 text-green-700',
     CANCELLED: 'bg-red-100 text-red-700',
     RETURNED:  'bg-orange-100 text-orange-700',
+    WAITING_FOR_CONSOLIDATION: 'bg-indigo-100 text-indigo-700 border border-indigo-200',
   };
   return map[status] ?? 'bg-gray-100 text-gray-700';
 }

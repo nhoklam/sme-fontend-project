@@ -17,12 +17,12 @@
 @layer components {
   /* Sidebar */
   .sidebar-item {
-    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
-           text-white/70 hover:text-white hover:bg-white/10
+    @apply flex items-center gap-2.5 px-3 py-1.5 rounded-md text-[13px] font-medium
+           text-gray-600 hover:text-primary-700 hover:bg-primary-50
            transition-all duration-150 cursor-pointer;
   }
   .sidebar-item.active {
-    @apply text-white bg-white/20;
+    @apply text-primary-700 bg-primary-50 font-semibold shadow-sm border border-primary-100;
   }
 
   /* Card */

@@ -13,7 +13,6 @@ import TransfersPage from '@/pages/TransfersPage';
 import CustomersPage from '@/pages/CustomersPage';
 import SuppliersPage from '@/pages/SuppliersPage';
 import FinancePage from '@/pages/FinancePage';
-import ReportsPage from '@/pages/ReportsPage';
 import SettingsPage from '@/pages/SettingsPage';
 import CategoriesPage from '@/pages/CategoriesPage';
 
@@ -27,7 +26,7 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   return !isAuthenticated ? <>{children}</> : <Navigate to="/" replace />;
 }
 
-// 1. Tạo component điều hướng thông minh dựa vào Role
+// Tạo component điều hướng thông minh dựa vào Role
 function IndexRedirect() {
   const isCashier = useAuthStore((s) => s.isCashier());
   // Thu ngân thì vào trang Bán hàng (POS), Quản lý/Admin thì vào Dashboard
@@ -41,14 +40,16 @@ export default function App() {
         {/* Public */}
         <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
 
-        {/* Private — inside AppLayout */}
+        {/* =========================================
+            TRANG POS ĐỨNG ĐỘC LẬP (FULL SCREEN)
+            Trang này sẽ không bị dính thanh Menu nữa
+            ========================================= */}
+        <Route path="/pos" element={<PrivateRoute><POSPage /></PrivateRoute>} />
+
+        {/* Private — Bọc bên trong AppLayout (Có Sidebar + Header) */}
         <Route path="/" element={<PrivateRoute><AppLayout /></PrivateRoute>}>
-          
-          {/* 2. Áp dụng luồng điều hướng thông minh ở đây */}
           <Route index element={<IndexRedirect />} />
-          
           <Route path="dashboard"      element={<DashboardPage />} />
-          <Route path="pos"            element={<POSPage />} />
           <Route path="orders"         element={<OrdersPage />} />
           <Route path="orders/:id"     element={<OrderDetailPage />} />
           <Route path="products"       element={<ProductsPage />} />
@@ -58,9 +59,8 @@ export default function App() {
           <Route path="customers"      element={<CustomersPage />} />
           <Route path="suppliers"      element={<SuppliersPage />} />
           <Route path="finance"        element={<FinancePage />} />
-          <Route path="reports"        element={<ReportsPage />} />
           <Route path="settings"       element={<SettingsPage />} />
-          <Route path="categories"      element={<CategoriesPage />} />
+          <Route path="categories"     element={<CategoriesPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

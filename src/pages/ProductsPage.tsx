@@ -1,8 +1,14 @@
-// src/pages/ProductsPage.tsx
-
-import { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Edit, Package, Eye, EyeOff, ImagePlus, Filter } from 'lucide-react';
+import { 
+  Plus, Search, Edit, Package, Eye, EyeOff, ImagePlus, Filter, 
+  X, CheckCircle2, AlertCircle, Box, ImageIcon, ChevronDown, PackagePlus
+} from 'lucide-react';
+import { 
+  PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis
+} from 'recharts';
+import AsyncSelect from 'react-select/async'; // ĐÃ THÊM THƯ VIỆN BƯỚC 2
 import { productService } from '@/services/product.service';
 import { uploadService } from '@/services/upload.service';
 import { categoryService, Category } from '@/services/category.service';
@@ -12,19 +18,41 @@ import { PageLoader, EmptyState, Pagination, Spinner } from '@/components/ui';
 import toast from 'react-hot-toast';
 import type { ProductResponse, CreateProductRequest, UpdateProductRequest } from '@/types';
 
-function ProductForm({
-  product,
-  onClose,
-  onSaved,
-  categories
-}: {
-  product?: ProductResponse;
-  onClose: () => void;
-  onSaved: () => void;
-  categories: Category[];
-}) {
+// ĐÃ THÊM: Import component Điều chỉnh kho nhanh (Bước 3)
+import InventoryAdjustModal from './InventoryAdjustModal'; 
+
+// ==========================================
+// 1. TÙY CHỈNH MÀU SẮC & TOOLTIP BIỂU ĐỒ 
+// ==========================================
+const CHART_COLORS = ['#4f46e5', '#0d9488', '#e11d48', '#d97706', '#7c3aed', '#0284c7'];
+
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white/90 backdrop-blur-md p-3.5 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-slate-100/80 min-w-[160px]">
+        <p className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-2 border-b border-slate-100/80 pb-1.5">{label || payload[0].name}</p>
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <div className="w-2.5 h-2.5 rounded-full ring-2 ring-white shadow-sm" style={{ backgroundColor: payload[0].payload.fill || payload[0].color }} />
+            <span className="text-sm font-medium text-slate-500">Số lượng:</span>
+          </div>
+          <span className="text-sm font-black text-slate-900">{payload[0].value}</span>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
+// ==========================================
+// 2. COMPONENT FORM: THÊM / SỬA SẢN PHẨM
+// ==========================================
+function ProductForm({ product, onClose, onSaved, categories }: { product?: ProductResponse; onClose: () => void; onSaved: () => void; categories: Category[]; }) {
   const isEdit = !!product;
   const [uploadingImage, setUploadingImage] = useState(false);
+
+  // Lấy dữ liệu tên Nhà Cung cấp hiện tại để hiển thị sẵn trong AsyncSelect khi Edit
+  const [currentSupplier, setCurrentSupplier] = useState<{value: string, label: string} | null>(null);
 
   const [form, setForm] = useState({
     name: product?.name ?? '',
@@ -40,14 +68,40 @@ function ProductForm({
     imageUrl: product?.imageUrl ?? '',
   });
 
-  const { data: suppliers } = useQuery({
-    queryKey: ['suppliers-dict'],
-    queryFn: () => supplierService.getAll({ size: 1000 }).then(r => r.data.data.content),
-  });
+  // Thiết lập giá trị mặc định cho AsyncSelect nếu đang Edit
+  useEffect(() => {
+    if (isEdit && product.supplierId) {
+      // Gọi API lấy thông tin chi tiết NCC để lấy tên hiển thị
+      supplierService.getById(product.supplierId).then(res => {
+        setCurrentSupplier({
+          value: res.data.data.id,
+          label: res.data.data.name
+        });
+      }).catch(err => console.error("Lỗi lấy thông tin NCC", err));
+    }
+  }, [isEdit, product]);
+
+  // ĐÃ SỬA (BƯỚC 2): HÀM LOAD DỮ LIỆU BẤT ĐỒNG BỘ CHO REACT-SELECT
+  const loadSupplierOptions = async (inputValue: string) => {
+      try {
+          const response = await supplierService.getAll({ 
+              keyword: inputValue, 
+              size: 20 // Chỉ tải 20 kết quả nhẹ nhất
+          });
+
+          const suppliers = response.data.data.content || []; 
+          return suppliers.map((supplier: any) => ({
+              value: supplier.id,
+              label: supplier.name
+          }));
+      } catch (error) {
+          console.error("Lỗi tải nhà cung cấp:", error);
+          return [];
+      }
+  };
 
   const mut = useMutation({
     mutationFn: () => {
-      // ĐÃ SỬA: Type an toàn, không dùng 'any' bypass
       if (isEdit) {
         const payload: UpdateProductRequest = {
           name: form.name.trim(),
@@ -80,11 +134,11 @@ function ProductForm({
       }
     },
     onSuccess: () => {
-      toast.success(isEdit ? 'Cập nhật sản phẩm thành công' : 'Tạo sản phẩm thành công');
+      toast.success(isEdit ? 'Hồ sơ sản phẩm đã được cập nhật' : 'Sản phẩm mới đã được tạo');
       onSaved();
       onClose();
     },
-    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Lỗi hệ thống'),
+    onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Đã xảy ra lỗi hệ thống'),
   });
 
   const f = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
@@ -97,7 +151,7 @@ function ProductForm({
     try {
       const res = await uploadService.uploadImage(file);
       setForm(prev => ({ ...prev, imageUrl: res.data.data.url }));
-      toast.success('Upload ảnh thành công!');
+      toast.success('Đã tải ảnh lên thành công!');
     } catch (err) {
       toast.error('Lỗi upload ảnh. Vui lòng thử lại.');
     } finally {
@@ -106,103 +160,142 @@ function ProductForm({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col animate-slide-up">
-        <div className="p-5 border-b flex items-center justify-between shrink-0">
-          <h3 className="font-bold text-lg">{isEdit ? 'Sửa sản phẩm' : 'Thêm sản phẩm mới'}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
+    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4 transition-opacity">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col animate-scale-in border border-slate-100 overflow-hidden">
+        
+        {/* Header Modal */}
+        <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white/80">
+          <div>
+            <h3 className="font-bold text-xl text-slate-900 tracking-tight">{isEdit ? 'Cập nhật Sản phẩm' : 'Thêm Sản phẩm mới'}</h3>
+            <p className="text-sm text-slate-500 mt-1 font-medium">Cung cấp đầy đủ thông tin để quản lý hiệu quả</p>
+          </div>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-all">
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        <div className="p-5 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="label">Tên sản phẩm *</label>
-              <input className="input" value={form.name} onChange={e => f('name', e.target.value)} placeholder="Tên sản phẩm..." autoFocus />
-            </div>
-            <div>
-              <label className="label">Mã ISBN/Barcode *</label>
-              <input className="input" value={form.isbnBarcode} onChange={e => f('isbnBarcode', e.target.value)} disabled={isEdit} placeholder="Mã vạch..." />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="label">Danh mục sản phẩm *</label>
-              <select className="input bg-white" value={form.categoryId} onChange={e => f('categoryId', e.target.value)}>
-                <option value="">-- Chọn danh mục --</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">Nhà cung cấp / NXB</label>
-              <select className="input bg-white" value={form.supplierId} onChange={e => f('supplierId', e.target.value)}>
-                <option value="">-- Tự do / Nhiều NCC --</option>
-                {suppliers?.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="label">Giá bán lẻ (đ) *</label>
-              <input type="number" className="input" value={form.retailPrice} onChange={e => f('retailPrice', e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Giá bán sỉ / buôn (đ)</label>
-              <input type="number" className="input" value={form.wholesalePrice} onChange={e => f('wholesalePrice', e.target.value)} />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="label">Mã lưu kho (SKU)</label>
-              <input className="input" value={form.sku} onChange={e => f('sku', e.target.value)} placeholder="VD: SP-001" />
-            </div>
-            <div>
-              <label className="label">Đơn vị tính</label>
-              <input className="input" value={form.unit} onChange={e => f('unit', e.target.value)} placeholder="VD: Cái, Hộp..." />
-            </div>
-            <div>
-              <label className="label">Trọng lượng (gram)</label>
-              <input type="number" className="input" value={form.weight} onChange={e => f('weight', e.target.value)} placeholder="VD: 200" />
-            </div>
-          </div>
-
-          <div>
-            <label className="label">Hình ảnh sản phẩm</label>
-            <div className="flex items-center gap-4">
-              <div className="flex-1">
-                <label className={`flex items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer hover:bg-gray-50 transition-colors ${uploadingImage ? 'opacity-50 pointer-events-none' : ''}`}>
-                  {uploadingImage ? <Spinner size="sm" /> : <ImagePlus className="w-5 h-5 text-gray-400" />}
-                  <span className="text-sm text-gray-600">{uploadingImage ? 'Đang tải lên...' : 'Click để chọn file ảnh'}</span>
-                  <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploadingImage} />
-                </label>
+        {/* Body Modal */}
+        <div className="p-8 space-y-6 overflow-y-auto flex-1 custom-scrollbar bg-slate-50/30">
+          
+          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_24px_rgb(0,0,0,0.02)] space-y-5">
+            <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-50 pb-3"><Box className="w-4 h-4 text-indigo-500" /> Thông tin cơ bản</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Tên sản phẩm *</label>
+                <input className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.name} onChange={e => f('name', e.target.value)} placeholder="Tên sản phẩm..." autoFocus />
               </div>
-              {form.imageUrl ? (
-                <div className="relative w-20 h-20 rounded-lg overflow-hidden border border-gray-200 shrink-0">
-                  <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover" />
-                  <button type="button" onClick={() => f('imageUrl', '')} className="absolute top-1 right-1 bg-white/80 rounded-full w-6 h-6 flex items-center justify-center text-red-500 hover:bg-white transition-colors">✕</button>
-                </div>
-              ) : (
-                <div className="w-20 h-20 bg-gray-100 border border-gray-200 rounded-lg flex items-center justify-center text-xs text-gray-400 shrink-0">Trống</div>
-              )}
+              <div>
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Mã Barcode / ISBN *</label>
+                <input className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed" value={form.isbnBarcode} onChange={e => f('isbnBarcode', e.target.value)} disabled={isEdit} placeholder="Mã vạch..." />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div className="relative">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Phân loại *</label>
+                <select className="w-full pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all appearance-none cursor-pointer" value={form.categoryId} onChange={e => f('categoryId', e.target.value)}>
+                  <option value="">-- Chọn danh mục --</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <ChevronDown className="absolute right-3 top-[34px] w-4 h-4 text-slate-400 pointer-events-none" />
+              </div>
+              <div className="relative">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Nhà cung cấp</label>
+                
+                {/* ĐÃ SỬA (BƯỚC 2): THAY THẾ BẰNG ASYNC SELECT */}
+                <AsyncSelect
+                    cacheOptions
+                    defaultOptions 
+                    loadOptions={loadSupplierOptions}
+                    placeholder="Gõ để tìm Nhà cung cấp..."
+                    noOptionsMessage={() => "Không tìm thấy nhà cung cấp nào"}
+                    value={currentSupplier}
+                    onChange={(selectedOption: any) => {
+                        setCurrentSupplier(selectedOption);
+                        setForm({ ...form, supplierId: selectedOption ? selectedOption.value : '' });
+                    }}
+                    isClearable={true}
+                    className="text-sm font-medium"
+                    styles={{
+                        control: (baseStyles, state) => ({
+                            ...baseStyles,
+                            backgroundColor: state.isFocused ? '#ffffff' : '#f8fafc',
+                            borderColor: state.isFocused ? '#6366f1' : '#e2e8f0',
+                            boxShadow: state.isFocused ? '0 0 0 2px rgba(99, 102, 241, 0.2)' : 'none',
+                            borderRadius: '0.75rem',
+                            padding: '2px',
+                            transition: 'all 0.2s ease'
+                        }),
+                    }}
+                />
+              </div>
             </div>
           </div>
 
-          <div>
-            <label className="label">Mô tả chi tiết</label>
-            <textarea className="input resize-none" rows={2} value={form.description} onChange={e => f('description', e.target.value)} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_24px_rgb(0,0,0,0.02)] space-y-5">
+               <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-50 pb-3"><Package className="w-4 h-4 text-indigo-500" /> Bán hàng & Lưu kho</h4>
+               
+               <div className="grid grid-cols-2 gap-4">
+                 <div>
+                   <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Giá bán lẻ *</label>
+                   <input type="number" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black text-indigo-600 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.retailPrice} onChange={e => f('retailPrice', e.target.value)} />
+                 </div>
+                 <div>
+                   <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Giá sỉ (Tùy chọn)</label>
+                   <input type="number" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-teal-600 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.wholesalePrice} onChange={e => f('wholesalePrice', e.target.value)} />
+                 </div>
+               </div>
+
+               <div className="grid grid-cols-2 gap-4">
+                 <div>
+                   <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Mã SKU</label>
+                   <input className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-slate-700 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.sku} onChange={e => f('sku', e.target.value)} placeholder="VD: SP-001" />
+                 </div>
+                 <div>
+                   <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Đơn vị / Trọng lượng</label>
+                   <div className="flex gap-2">
+                      <input className="w-1/2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:border-indigo-500 outline-none transition-all" value={form.unit} onChange={e => f('unit', e.target.value)} placeholder="Cái" />
+                      <input type="number" className="w-1/2 px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:border-indigo-500 outline-none transition-all" value={form.weight} onChange={e => f('weight', e.target.value)} placeholder="Gram" />
+                   </div>
+                 </div>
+               </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_24px_rgb(0,0,0,0.02)] flex flex-col">
+              <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-50 pb-3 mb-4"><ImagePlus className="w-4 h-4 text-indigo-500" /> Hình ảnh đại diện</h4>
+              <div className="flex-1 flex flex-col items-center justify-center">
+                {form.imageUrl ? (
+                  <div className="relative w-36 h-36 rounded-2xl overflow-hidden border border-slate-200 shadow-sm group">
+                    <img src={form.imageUrl} alt="Preview" className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-500" />
+                    <button type="button" onClick={() => f('imageUrl', '')} className="absolute top-2 right-2 bg-white/90 backdrop-blur rounded-full w-8 h-8 flex items-center justify-center text-rose-500 hover:bg-rose-50 hover:text-rose-600 shadow-sm transition-all opacity-0 group-hover:opacity-100">✕</button>
+                  </div>
+                ) : (
+                  <label className={`w-full h-full min-h-[144px] flex flex-col items-center justify-center gap-3 border-2 border-dashed border-slate-200 rounded-2xl p-4 cursor-pointer hover:bg-indigo-50/50 hover:border-indigo-300 transition-all ${uploadingImage ? 'opacity-50 pointer-events-none' : ''}`}>
+                    {uploadingImage ? <Spinner size="md" className="text-indigo-500" /> : <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center"><ImageIcon className="w-6 h-6 text-slate-400" /></div>}
+                    <span className="text-sm font-medium text-slate-500">{uploadingImage ? 'Đang xử lý ảnh...' : 'Nhấn để tải ảnh lên (Tỉ lệ 1:1)'}</span>
+                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploadingImage} />
+                  </label>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_4px_24px_rgb(0,0,0,0.02)]">
+            <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Mô tả sản phẩm</label>
+            <textarea className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all resize-none custom-scrollbar" rows={3} value={form.description} onChange={e => f('description', e.target.value)} placeholder="Nhập mô tả chi tiết, thành phần, công dụng..." />
           </div>
         </div>
 
-        <div className="p-5 border-t flex gap-3 justify-end bg-gray-50 rounded-b-2xl shrink-0">
-          <button onClick={onClose} className="btn-secondary bg-white">Hủy</button>
+        {/* Footer Modal */}
+        <div className="p-6 border-t border-slate-100 flex gap-4 justify-end bg-white">
+          <button onClick={onClose} className="px-6 py-3 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">Hủy bỏ</button>
           <button 
             onClick={() => mut.mutate()} 
             disabled={mut.isPending || !form.name || !form.isbnBarcode || !form.retailPrice || !form.categoryId || uploadingImage} 
-            className="btn-primary min-w-[120px] justify-center"
+            className="flex items-center justify-center min-w-[160px] px-6 py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-[0_4px_12px_rgb(99,102,241,0.3)] hover:bg-indigo-700 disabled:opacity-50 disabled:shadow-none transition-all"
           >
-            {mut.isPending ? <Spinner size="sm" color="white" /> : (isEdit ? 'Lưu thay đổi' : 'Tạo sản phẩm')}
+            {mut.isPending ? <Spinner size="sm" className="text-white" /> : (isEdit ? 'Lưu thay đổi' : 'Hoàn tất tạo mới')}
           </button>
         </div>
       </div>
@@ -210,53 +303,57 @@ function ProductForm({
   );
 }
 
+// ==========================================
+// 3. TRANG CHÍNH: DANH SÁCH SẢN PHẨM
+// ==========================================
 export default function ProductsPage() {
   const [keyword, setKeyword] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
-  const [isActiveFilter, setIsActiveFilter] = useState<string>(''); // ĐÃ BỔ SUNG: State lọc Trạng thái
+  
+  // ĐÃ THÊM (BƯỚC 1): BỘ LỌC NHÀ CUNG CẤP
+  const [supplierFilter, setSupplierFilter] = useState<string>('');
+  
+  const [isActiveFilter, setIsActiveFilter] = useState<string>('');
   const [page, setPage] = useState(0);
 
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<ProductResponse | undefined>();
+  const [viewingProduct, setViewingProduct] = useState<ProductResponse | null>(null);
+  
+  // ĐÃ THÊM (BƯỚC 3): STATE ĐIỀU CHỈNH TỒN KHO NHANH
+  const [adjustingProduct, setAdjustingProduct] = useState<ProductResponse | null>(null);
+
   const qc = useQueryClient();
 
-  const { data: categories } = useQuery({
-    queryKey: ['categories'],
-    queryFn: () => categoryService.getAll().then(r => r.data.data),
-  });
-
-  const { data: suppliers } = useQuery({
-    queryKey: ['suppliers-dict'],
-    queryFn: () => supplierService.getAll({ size: 1000 }).then(r => r.data.data.content),
-  });
+  const { data: categories } = useQuery({ queryKey: ['categories'], queryFn: () => categoryService.getAll().then(r => r.data.data) });
+  const { data: suppliers } = useQuery({ queryKey: ['suppliers-dict'], queryFn: () => supplierService.getAll({ size: 1000 }).then(r => r.data.data.content) });
 
   const getSupplierName = (id?: string) => {
     if (!id || !suppliers) return null;
     return suppliers.find((s: any) => s.id === id)?.name;
   };
 
-  // ĐÃ SỬA: Truyền isActiveFilter vào param
   const { data, isLoading } = useQuery({
-    queryKey: ['products', keyword, selectedCategoryId, isActiveFilter, page],
+    queryKey: ['products', keyword, selectedCategoryId, supplierFilter, isActiveFilter, page],
     queryFn: () => productService.getProducts({ 
       keyword: keyword || undefined, 
       categoryId: selectedCategoryId || undefined, 
+      supplierId: supplierFilter || undefined, // ĐÃ THÊM THAM SỐ API (BƯỚC 1)
       isActive: isActiveFilter === '' ? undefined : isActiveFilter === 'true',
-      page, 
-      size: 20 
+      page, size: 20 
     }).then(r => r.data.data),
   });
 
   const toggleMut = useMutation({
     mutationFn: (p: ProductResponse) => productService.update(p.id, { isActive: !p.isActive }),
     onSuccess: () => {
-      toast.success('Đã cập nhật trạng thái');
+      toast.success('Đã cập nhật trạng thái kinh doanh');
       qc.invalidateQueries({ queryKey: ['products'] });
     },
   });
 
-  // ĐÃ SỬA: Dùng API getById để lấy thông tin mới nhất khi Sửa
-  const handleEditClick = async (productId: string) => {
+  const handleEditClick = async (productId: string, e?: React.MouseEvent) => {
+    if(e) e.stopPropagation();
     try {
       const res = await productService.getById(productId);
       setEditing(res.data.data);
@@ -266,131 +363,269 @@ export default function ProductsPage() {
     }
   };
 
-  // ĐÃ SỬA: Yêu cầu xác nhận khi Ẩn/Hiện sản phẩm
-  const handleToggleActive = (p: ProductResponse) => {
-    const action = p.isActive ? 'ẩn (ngừng bán)' : 'hiện (mở bán)';
-    if (window.confirm(`Bạn có chắc chắn muốn ${action} sản phẩm "${p.name}" không?`)) {
+  const handleToggleActive = (p: ProductResponse, e?: React.MouseEvent) => {
+    if(e) e.stopPropagation();
+    const action = p.isActive ? 'ngừng kinh doanh' : 'mở bán lại';
+    if (window.confirm(`Xác nhận ${action} sản phẩm "${p.name}"?`)) {
       toggleMut.mutate(p);
     }
   };
 
-  if (isLoading) return <PageLoader />;
+  const dashboardStats = useMemo(() => {
+    const prods = data?.content || [];
+    let inStock = 0, lowStock = 0, outStock = 0;
+    const catMap: Record<string, number> = {};
+
+    prods.forEach(p => {
+      const qty = p.availableQuantity || 0;
+      if (qty === 0) outStock++;
+      else if (qty < 10) lowStock++;
+      else inStock++;
+
+      const cName = p.categoryName || 'Khác';
+      catMap[cName] = (catMap[cName] || 0) + 1;
+    });
+
+    const categoryData = Object.entries(catMap)
+      .map(([name, value], i) => ({ name, value, color: CHART_COLORS[i % CHART_COLORS.length] }))
+      .sort((a, b) => b.value - a.value).slice(0, 5); 
+
+    const stockData = [
+      { name: 'Đủ hàng', value: inStock, fill: '#10b981' },
+      { name: 'Sắp hết', value: lowStock, fill: '#f59e0b' },
+      { name: 'Hết hàng', value: outStock, fill: '#f43f5e' },
+    ].filter(s => s.value > 0);
+
+    return { categoryData, stockData };
+  }, [data?.content]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center">
-        <div className="flex gap-3 w-full sm:w-auto flex-1">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input 
-              className="input pl-10" 
-              placeholder="Tìm theo tên, ISBN, SKU..." 
-              value={keyword} 
-              onChange={e => { setKeyword(e.target.value); setPage(0); }} 
-            />
-          </div>
-          <div className="relative w-40 shrink-0">
-             <Filter className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-             <select 
-               className="input pl-9 bg-white cursor-pointer" 
-               value={selectedCategoryId} 
-               onChange={(e) => { setSelectedCategoryId(e.target.value); setPage(0); }}
-             >
-               <option value="">Tất cả danh mục</option>
-               {categories?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-             </select>
-          </div>
-
-          {/* ĐÃ BỔ SUNG: Dropdown lọc trạng thái */}
-          <div className="relative w-36 shrink-0">
-             <select 
-               className="input bg-white cursor-pointer" 
-               value={isActiveFilter} 
-               onChange={(e) => { setIsActiveFilter(e.target.value); setPage(0); }}
-             >
-               <option value="">Mọi trạng thái</option>
-               <option value="true">Đang bán (Hiện)</option>
-               <option value="false">Ngừng bán (Ẩn)</option>
-             </select>
-          </div>
-
+    <div className="min-h-screen bg-slate-50/30 text-slate-800 p-4 md:p-8 space-y-8 font-sans pb-16 max-w-[1600px] mx-auto relative">
+      
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Danh mục Sản phẩm</h1>
+          <p className="text-sm text-slate-500 mt-1.5 font-medium">Quản lý kho hàng, thông tin hàng hóa và định giá.</p>
         </div>
-        
-        <button onClick={() => { setEditing(undefined); setShowForm(true); }} className="btn-primary whitespace-nowrap">
-          <Plus className="w-4 h-4" /> Thêm sản phẩm
+        <button onClick={() => { setEditing(undefined); setShowForm(true); }} className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-semibold shadow-[0_4px_12px_rgb(0,0,0,0.1)] transition-all">
+          <Plus className="w-5 h-5" /> Thêm sản phẩm
         </button>
       </div>
 
-      <div className="card p-0 overflow-hidden">
-        <div className="table-wrapper">
-          <table className="table">
-            <thead className="bg-gray-50">
+      {/* MINI DASHBOARD */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-3 bg-white p-6 rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 flex flex-col justify-center relative overflow-hidden group">
+          <div className="absolute -right-6 -top-6 w-24 h-24 bg-indigo-50 rounded-full blur-2xl group-hover:bg-indigo-100 transition-colors duration-700"></div>
+          <div className="relative z-10 flex items-center gap-4 mb-4">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-100/50 text-indigo-600 flex items-center justify-center shadow-sm"><Package className="w-6 h-6"/></div>
+            <div>
+              <p className="text-sm font-semibold text-slate-500">Mã hàng hệ thống</p>
+              <h3 className="text-3xl font-black text-slate-900 mt-0.5 tracking-tight">{data?.totalElements || 0}</h3>
+            </div>
+          </div>
+          <div className="relative z-10 flex gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 px-3 py-1 rounded-md border border-emerald-100/60">Live Sync</span>
+          </div>
+        </div>
+
+        <div className="lg:col-span-5 bg-white p-6 rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 flex items-center gap-6">
+          <div className="w-1/2 h-[120px] relative">
+            {dashboardStats.categoryData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={dashboardStats.categoryData} innerRadius={42} outerRadius={55} paddingAngle={5} dataKey="value" stroke="none" cornerRadius={4}>
+                    {dashboardStats.categoryData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                  </Pie>
+                  <RechartsTooltip content={<CustomTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : <div className="absolute inset-0 flex items-center justify-center text-xs font-medium text-slate-400 bg-slate-50 rounded-full border border-slate-100 border-dashed">Trống</div>}
+          </div>
+          <div className="w-1/2 space-y-3">
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Cơ cấu danh mục</p>
+            <div className="space-y-2.5">
+              {dashboardStats.categoryData.slice(0, 3).map((cat, i) => (
+                <div key={i} className="flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-2 text-slate-600 font-semibold truncate pr-2">
+                    <div className="w-2 h-2 rounded-full ring-2 ring-white shadow-sm shrink-0" style={{ backgroundColor: cat.color }}/>
+                    <span className="truncate">{cat.name}</span>
+                  </div>
+                  <span className="font-black text-slate-900">{cat.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="lg:col-span-4 bg-white p-6 rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 flex flex-col justify-center">
+          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-4">Cảnh báo tồn kho (Trang này)</p>
+          <div className="h-[90px] w-full">
+            {dashboardStats.stockData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dashboardStats.stockData} layout="vertical" margin={{ top: 0, right: 30, left: -10, bottom: 0 }}>
+                  <XAxis type="number" hide />
+                  <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#475569', fontWeight: 600 }} width={80} />
+                  <RechartsTooltip cursor={{ fill: '#f8fafc' }} content={<CustomTooltip />} />
+                  <Bar dataKey="value" radius={[0, 6, 6, 0]} barSize={16}>
+                    {dashboardStats.stockData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : <p className="text-sm font-medium text-slate-400 text-center h-full flex items-center justify-center bg-slate-50 rounded-xl border border-slate-100 border-dashed">Dữ liệu hoàn hảo</p>}
+          </div>
+        </div>
+      </div>
+
+      {/* KHU VỰC BẢNG DỮ LIỆU SẢN PHẨM */}
+      <div className="bg-white rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 overflow-hidden flex flex-col">
+        
+        {/* Thanh công cụ (Toolbar) */}
+        <div className="p-5 border-b border-slate-100 flex flex-col lg:flex-row justify-between gap-4 bg-white">
+          <div className="flex flex-col sm:flex-row gap-4 w-full">
+            <div className="relative flex-1 group min-w-[250px]">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+              <input 
+                type="text" 
+                placeholder="Tìm tên, ISBN, SKU..." 
+                className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all"
+                value={keyword}
+                onChange={e => { setKeyword(e.target.value); setPage(0); }}
+              />
+            </div>
+            
+            <div className="relative w-full sm:w-48 shrink-0 group">
+               <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 group-focus-within:text-indigo-500 transition-colors" />
+               <select 
+                 className="w-full pl-11 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none cursor-pointer" 
+                 value={selectedCategoryId} 
+                 onChange={(e) => { setSelectedCategoryId(e.target.value); setPage(0); }}
+               >
+                 <option value="">Tất cả danh mục</option>
+                 {categories?.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+               </select>
+               <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
+            </div>
+
+            {/* ĐÃ THÊM (BƯỚC 1): DROPDOWN LỌC NHÀ CUNG CẤP */}
+            <div className="relative w-full sm:w-48 shrink-0 group">
+              <select
+                value={supplierFilter}
+                onChange={(e) => { setSupplierFilter(e.target.value); setPage(0); }}
+                className="w-full pl-4 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none cursor-pointer"
+              >
+                <option value="">Tất cả Nhà Cung Cấp</option>
+                {suppliers?.map((supplier: any) => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
+            </div>
+
+            <div className="relative w-full sm:w-40 shrink-0 group">
+               <select 
+                 className="w-full pl-4 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none cursor-pointer" 
+                 value={isActiveFilter} 
+                 onChange={(e) => { setIsActiveFilter(e.target.value); setPage(0); }}
+               >
+                 <option value="">Mọi trạng thái</option>
+                 <option value="true">Đang kinh doanh</option>
+                 <option value="false">Ngừng kinh doanh</option>
+               </select>
+               <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
+            </div>
+          </div>
+        </div>
+
+        {/* Bảng dữ liệu */}
+        <div className="overflow-x-auto relative min-h-[400px]">
+          {isLoading && <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-10 flex items-center justify-center"><Spinner size="lg" className="text-indigo-600" /></div>}
+          <table className="w-full text-left text-sm text-slate-600">
+            <thead className="bg-slate-50/50 border-b border-slate-100 text-slate-500 uppercase text-[11px] tracking-wider font-bold">
               <tr>
-                <th>Sản phẩm</th>
-                <th>Mã Barcode / SKU</th>
-                <th>Nhà cung cấp</th>
-                <th>Giá bán</th>
-                <th>Giá vốn (MAC)</th>
-                <th>Tồn kho</th>
-                <th>Trạng thái</th>
-                <th className="text-right">Hành động</th>
+                <th className="px-6 py-5">Sản phẩm</th>
+                <th className="px-6 py-5">Mã Barcode / SKU</th>
+                <th className="px-6 py-5">Phân loại & NCC</th>
+                <th className="px-6 py-5 text-right">Giá bán (VNĐ)</th>
+                <th className="px-6 py-5 text-right">Tồn kho</th>
+                <th className="px-6 py-5 text-center w-36">Thao tác</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
-              {(data?.content ?? []).length === 0 ? (
+            <tbody className="divide-y divide-slate-50/80">
+              {(data?.content ?? []).length === 0 && !isLoading ? (
                 <tr>
-                  <td colSpan={8} className="py-12">
+                  <td colSpan={6} className="py-24">
                     <EmptyState 
                       icon={Package} 
-                      title="Không tìm thấy sản phẩm" 
-                      description="Thử thay đổi từ khóa hoặc bộ lọc danh mục" 
-                      action={<button onClick={() => setShowForm(true)} className="btn-primary mt-4">Thêm sản phẩm mới</button>} 
+                      title="Chưa có dữ liệu sản phẩm" 
+                      description="Hãy thêm sản phẩm mới hoặc điều chỉnh lại bộ lọc tìm kiếm." 
+                      action={<button onClick={() => setShowForm(true)} className="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-bold transition-all shadow-sm">Thêm mới ngay</button>} 
                     />
                   </td>
                 </tr>
               ) : (
-                (data?.content ?? []).map(p => (
-                  <tr key={p.id} className={`hover:bg-gray-50 transition-colors ${!p.isActive ? 'opacity-60 bg-gray-50' : ''}`}>
-                    <td>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0 border border-gray-200">
-                          {p.imageUrl ? <img src={p.imageUrl} alt="" className="w-full h-full object-cover rounded-lg" /> : <Package className="w-5 h-5 text-gray-400" />}
+                (data?.content ?? []).map((p: ProductResponse) => (
+                  <tr key={p.id} onClick={() => setViewingProduct(p)} className={`hover:bg-slate-50/80 transition-colors group cursor-pointer ${!p.isActive ? 'opacity-60 bg-slate-50/50 grayscale-[20%]' : ''}`}>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-xl border border-slate-100 overflow-hidden bg-white shrink-0 shadow-sm relative group-hover:shadow-md transition-all">
+                          {p.imageUrl ? (
+                            <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
+                          ) : (
+                            <ImageIcon className="w-5 h-5 text-slate-300 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                          )}
                         </div>
-                        <div>
-                          <p className="font-semibold text-gray-800 text-sm">{p.name}</p>
-                          <p className="text-gray-500 text-[13px]">{p.categoryName ?? 'Chưa phân loại'}</p>
-                        </div>
+                        <span className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors line-clamp-2">{p.name}</span>
                       </div>
                     </td>
-                    <td>
-                      <div className="flex flex-col">
-                        <span className="font-mono text-gray-700 text-[13px]">{p.isbnBarcode}</span>
-                        {p.sku && <span className="font-mono text-gray-400 text-xs">SKU: {p.sku}</span>}
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col gap-1.5">
+                        <span className="font-mono text-[13px] font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded w-max">{p.isbnBarcode}</span>
+                        {p.sku && <span className="font-mono text-xs font-semibold text-slate-400">SKU: {p.sku}</span>}
                       </div>
                     </td>
-                    <td>
-                      <span className="text-gray-600 text-sm">{getSupplierName(p.supplierId) || '-'}</span>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col gap-1">
+                        <span className="font-bold text-indigo-600 text-[13px]">{p.categoryName ?? 'Chưa phân loại'}</span>
+                        <span className="text-[11px] font-medium text-slate-500 truncate max-w-[150px] uppercase tracking-wide">{getSupplierName(p.supplierId) || 'Đa NCC'}</span>
+                      </div>
                     </td>
-                    <td>
-                        <div className="font-semibold text-gray-800">{formatCurrency(p.retailPrice)}</div>
-                        <div className="text-xs text-gray-400">Sỉ: {p.wholesalePrice ? formatCurrency(p.wholesalePrice) : '-'}</div>
+                    <td className="px-6 py-4 text-right">
+                      <p className="font-black text-slate-900 text-base">{formatCurrency(p.retailPrice)}</p>
+                      <p className="text-[11px] text-slate-400 mt-1 font-medium" title="Giá vốn (MAC) / Giá Sỉ">
+                        <span className="text-amber-600">{formatCurrency(p.macPrice || 0)}</span>
+                        {p.wholesalePrice ? ` / ${formatCurrency(p.wholesalePrice)}` : ''}
+                      </p>
                     </td>
-                    
-                    {/* ĐÃ BỔ SUNG HIỂN THỊ MAC PRICE */}
-                    <td className="font-medium text-amber-600">{formatCurrency(p.macPrice || 0)}</td>
-                    
-                    <td className="font-bold text-blue-600">{p.availableQuantity || 0}</td>
-                    <td>
-                      <span className={`badge ${p.isActive ? 'bg-green-100 text-green-700 border-green-200' : 'bg-gray-200 text-gray-500 border-gray-300'} border`}>
-                        {p.isActive ? 'Hoạt động' : 'Đã ẩn'}
-                      </span>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex flex-col items-end gap-1.5">
+                        <span className="font-black text-slate-900 text-lg">{p.availableQuantity || 0}</span>
+                        {p.isActive ? (
+                          (p.availableQuantity || 0) > 10 ? <span className="bg-emerald-50 text-emerald-700 border border-emerald-100/60 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider">Còn hàng</span> :
+                          (p.availableQuantity || 0) > 0 ? <span className="bg-amber-50 text-amber-700 border border-amber-100/60 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider">Sắp hết</span> :
+                          <span className="bg-rose-50 text-rose-700 border border-rose-100/60 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider">Hết hàng</span>
+                        ) : (
+                          <span className="bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider">Ngừng bán</span>
+                        )}
+                      </div>
                     </td>
-                    <td>
-                      <div className="flex justify-end gap-2">
-                        <button onClick={() => handleEditClick(p.id)} className="btn-ghost btn-sm p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100" title="Sửa sản phẩm">
-                          <Edit className="w-4 h-4" />
+                    <td className="px-6 py-4 text-center">
+                      <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={(e) => { e.stopPropagation(); setViewingProduct(p); }} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Chi tiết"><Eye className="w-4 h-4"/></button>
+                        <button onClick={(e) => handleEditClick(p.id, e)} className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors" title="Sửa"><Edit className="w-4 h-4"/></button>
+                        
+                        {/* ĐÃ THÊM (BƯỚC 3): NÚT NHẬP KHO NHANH */}
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); setAdjustingProduct(p); }} 
+                            className="text-emerald-600 hover:text-emerald-800 transition p-1.5 bg-emerald-50 rounded-lg hover:bg-emerald-100"
+                            title="Điều chỉnh / Nhập kho nhanh"
+                        >
+                            <PackagePlus className="w-4 h-4" />
                         </button>
-                        <button onClick={() => handleToggleActive(p)} className={`btn-ghost btn-sm p-1.5 ${p.isActive ? 'bg-amber-50 text-amber-600 hover:bg-amber-100' : 'bg-green-50 text-green-600 hover:bg-green-100'}`} title={p.isActive ? 'Ẩn sản phẩm' : 'Kích hoạt'}>
+
+                        <button onClick={(e) => handleToggleActive(p, e)} className={`p-1.5 rounded-lg transition-colors ${p.isActive ? 'text-rose-500 hover:bg-rose-50' : 'text-emerald-600 hover:bg-emerald-50'}`} title={p.isActive ? 'Ngừng kinh doanh' : 'Mở bán lại'}>
                           {p.isActive ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                         </button>
                       </div>
@@ -403,20 +638,132 @@ export default function ProductsPage() {
         </div>
         
         {data && data.totalPages > 1 && (
-          <div className="p-4 border-t">
+          <div className="p-4 border-t border-slate-100 bg-slate-50/50">
             <Pagination page={page} totalPages={data.totalPages} totalElements={data.totalElements} size={20} onPageChange={setPage} />
           </div>
         )}
       </div>
 
-      {showForm && (
-        <ProductForm 
-          product={editing} 
-          categories={categories ?? []} 
-          onClose={() => setShowForm(false)} 
-          onSaved={() => qc.invalidateQueries({ queryKey: ['products'] })} 
-        />
+      {/* CHI TIẾT SẢN PHẨM */}
+      {viewingProduct && (
+        <>
+          <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-40 transition-opacity" onClick={() => setViewingProduct(null)} />
+          <div className="fixed inset-y-0 right-0 w-full max-w-md bg-[#fcfcfd] shadow-2xl z-50 flex flex-col border-l border-slate-100 animate-slide-in-right">
+            
+            <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-white/90 backdrop-blur-md sticky top-0 z-10">
+              <h2 className="text-xl font-bold text-slate-900 tracking-tight">Hồ sơ Sản phẩm</h2>
+              <button onClick={() => setViewingProduct(null)} className="p-2 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-full transition-all bg-white shadow-sm border border-slate-100">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+              
+              <div className="w-full aspect-[4/3] rounded-3xl bg-white border border-slate-100 overflow-hidden relative shadow-[0_4px_20px_rgb(0,0,0,0.03)] group">
+                {viewingProduct.imageUrl ? (
+                  <img src={viewingProduct.imageUrl} alt={viewingProduct.name} className="w-full h-full object-cover transition-transform group-hover:scale-105 duration-700" />
+                ) : (
+                  <ImageIcon className="w-12 h-12 text-slate-200 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                )}
+                <div className="absolute top-4 right-4 flex flex-col gap-2">
+                  {!viewingProduct.isActive ? <span className="bg-slate-900/90 text-white backdrop-blur px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider">Ngừng bán</span> :
+                    (viewingProduct.availableQuantity || 0) > 10 ? <span className="bg-emerald-500/90 text-white backdrop-blur px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 uppercase tracking-wider"><CheckCircle2 className="w-3.5 h-3.5"/> Đang bán</span> :
+                    <span className="bg-rose-500/90 text-white backdrop-blur px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 uppercase tracking-wider"><AlertCircle className="w-3.5 h-3.5"/> Thiếu hàng</span>
+                  }
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-lg text-xs font-bold border border-indigo-100/50 uppercase tracking-wider">{viewingProduct.categoryName || 'Chưa phân loại'}</span>
+                  <span className="font-mono text-xs font-bold text-slate-500 bg-white px-2 py-1 rounded-lg border border-slate-200">SKU: {viewingProduct.sku || 'N/A'}</span>
+                </div>
+                <h3 className="text-2xl font-black text-slate-900 leading-tight tracking-tight">{viewingProduct.name}</h3>
+                <p className="font-mono text-sm font-semibold text-slate-500 mt-3 flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-100 w-max shadow-sm">
+                  <svg className="w-4 h-4 text-slate-400" fill="currentColor" viewBox="0 0 24 24"><path d="M4 6h2v12H4zm4 0h2v12H8zm4 0h2v12h-2zm6 0h-2v12h2v-12zM2 4v16h20V4H2zm18 14H4V6h16v12z"/></svg>
+                  {viewingProduct.isbnBarcode}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)]">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Giá bán lẻ</p>
+                  <p className="text-2xl font-black text-indigo-600">{formatCurrency(viewingProduct.retailPrice)}</p>
+                  <div className="mt-3 pt-3 border-t border-slate-50 space-y-1.5">
+                    <p className="text-[11px] text-slate-500 flex justify-between"><span>Giá sỉ:</span> <span className="font-bold text-slate-700">{viewingProduct.wholesalePrice ? formatCurrency(viewingProduct.wholesalePrice) : '---'}</span></p>
+                    <p className="text-[11px] text-slate-500 flex justify-between"><span>Giá vốn:</span> <span className="font-black text-amber-600">{formatCurrency(viewingProduct.macPrice || 0)}</span></p>
+                  </div>
+                </div>
+                <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)] flex flex-col">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Tồn kho</p>
+                  <p className="text-2xl font-black text-slate-900">{viewingProduct.availableQuantity || 0} <span className="text-sm font-semibold text-slate-500 ml-0.5">{viewingProduct.unit || 'SP'}</span></p>
+                  <div className="mt-auto pt-3 border-t border-slate-50 space-y-1.5">
+                    <p className="text-[11px] text-slate-500 flex justify-between"><span>Chờ giao:</span> <span className="font-bold text-slate-700">0</span></p>
+                    <p className="text-[11px] text-slate-500 flex justify-between"><span>Đang nhập:</span> <span className="font-bold text-indigo-600">0</span></p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)]">
+                <div className="flex items-center gap-2 mb-4">
+                  <Box className="w-4 h-4 text-indigo-500" />
+                  <h4 className="font-bold text-slate-900 text-sm">Thuộc tính bổ sung</h4>
+                </div>
+                <ul className="space-y-3 text-[13px]">
+                  <li className="flex justify-between items-center"><span className="text-slate-500 font-medium">Đơn vị tính</span><span className="font-bold text-slate-800 bg-slate-50 px-2 py-0.5 rounded">{viewingProduct.unit || '---'}</span></li>
+                  <li className="flex justify-between items-center"><span className="text-slate-500 font-medium">Trọng lượng</span><span className="font-bold text-slate-800 bg-slate-50 px-2 py-0.5 rounded">{viewingProduct.weight ? `${viewingProduct.weight} gram` : '---'}</span></li>
+                  <li className="flex justify-between items-center"><span className="text-slate-500 font-medium">Nhà cung cấp</span><span className="font-bold text-slate-800 text-right max-w-[180px] truncate">{getSupplierName(viewingProduct.supplierId) || 'Đa nhà cung cấp'}</span></li>
+                </ul>
+              </div>
+
+              {viewingProduct.description && (
+                <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-[0_4px_20px_rgb(0,0,0,0.02)]">
+                  <h4 className="font-bold text-slate-900 text-sm mb-3">Mô tả sản phẩm</h4>
+                  <p className="text-sm text-slate-600 font-medium leading-relaxed whitespace-pre-wrap">{viewingProduct.description}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-slate-100 bg-white grid grid-cols-2 gap-4 shrink-0">
+              <button onClick={() => { setViewingProduct(null); handleEditClick(viewingProduct.id); }} className="flex justify-center items-center gap-2 bg-slate-100 text-slate-700 font-bold py-3.5 rounded-xl hover:bg-slate-200 transition-colors">
+                <Edit className="w-4 h-4" /> Sửa thông tin
+              </button>
+              <button onClick={() => { setViewingProduct(null); setAdjustingProduct(viewingProduct); }} className="flex justify-center items-center gap-2 bg-slate-900 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-slate-800 transition-colors">
+                <PackagePlus className="w-4 h-4" /> Cập nhật kho
+              </button>
+            </div>
+
+          </div>
+        </>
       )}
+
+      {/* ĐÃ THÊM (BƯỚC 3): MODAL ĐIỀU CHỈNH TỒN KHO NHANH */}
+      {adjustingProduct && (
+          <InventoryAdjustModal
+              product={adjustingProduct} 
+              onClose={() => setAdjustingProduct(null)}
+              onSuccess={() => {
+                  setAdjustingProduct(null);
+                  qc.invalidateQueries({ queryKey: ['products'] }); 
+              }}
+          />
+      )}
+
+      {/* Form modal ẩn / hiện */}
+      {showForm && (
+        <ProductForm product={editing} categories={categories ?? []} onClose={() => setShowForm(false)} onSaved={() => qc.invalidateQueries({ queryKey: ['products'] })} />
+      )}
+
+      {/* CSS Animation Slide */}
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+        .animate-slide-in-right { animation: slideInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes scaleIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+        .animate-scale-in { animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+      `}} />
     </div>
   );
 }

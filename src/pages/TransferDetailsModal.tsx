@@ -1,6 +1,7 @@
 import React, { useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
-import { X, Package, Info, Clock, MapPin, Printer } from 'lucide-react';
+import { X, Package, Info, Clock, MapPin, Printer, ShoppingBag, ArrowLeftRight } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import { transferService } from '@/services/transfer.service';
 import { warehouseService } from '@/services/warehouse.service';
@@ -8,6 +9,14 @@ import { productService } from '@/services/product.service';
 import { formatDateTime } from '@/lib/utils';
 import { Spinner } from '@/components/ui';
 import { TransferPrintTemplate } from './TransferPrintTemplate';
+
+// Tiện ích map trạng thái
+const STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  DRAFT: { label: 'Nháp', className: 'bg-slate-100 text-slate-600 border-slate-200' },
+  DISPATCHED: { label: 'Đang vận chuyển', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  RECEIVED: { label: 'Đã nhận', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  CANCELLED: { label: 'Đã hủy', className: 'bg-rose-50 text-rose-700 border-rose-200' },
+};
 
 interface Props {
   transferId: string;
@@ -43,167 +52,252 @@ export function TransferDetailsModal({ transferId, onClose }: Props) {
 
   const warehouseMap = useMemo(() => {
     const map = new Map<string, string>();
-    warehouses?.forEach(w => map.set(w.id, w.name));
+    warehouses?.forEach((w: any) => map.set(w.id, w.name));
     return map;
   }, [warehouses]);
 
   const productMap = useMemo(() => {
-    const map = new Map<string, string>();
-    products?.forEach(p => map.set(p.id, p.name));
+    const map = new Map<string, any>();
+    products?.forEach((p: any) => map.set(p.id, p));
     return map;
   }, [products]);
 
-  const statusColors: Record<string, string> = {
-    DRAFT: 'bg-gray-100 text-gray-600', 
-    DISPATCHED: 'bg-amber-100 text-amber-700',
-    RECEIVED: 'bg-green-100 text-green-700', 
-    CANCELLED: 'bg-red-100 text-red-700',
-  };
-
   if (isLoading || !transfer) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    return createPortal(
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm transition-all">
         <Spinner size="lg" className="text-white" />
-      </div>
+      </div>,
+      document.body
     );
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh] animate-slide-up">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 sm:p-6 transition-all">
+      
+      {/* ── KHUNG VIỀN TRẮNG 1CM BAO NGOÀI ── */}
+      <div className="bg-white rounded-[24px] shadow-2xl w-full max-w-5xl flex flex-col max-h-[95vh] animate-slide-up p-3 md:p-4">
         
-        {/* Header */}
-        <div className="flex justify-between items-center p-5 border-b shrink-0">
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold text-gray-800">Chi tiết phiếu: <span className="text-primary-600">{transfer.code}</span></h2>
-            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${statusColors[transfer.status]}`}>
-              {transfer.status}
-            </span>
-          </div>
+        {/* ── NỘI DUNG MODAL (Nằm lọt lòng trong khung trắng) ── */}
+        <div className="rounded-xl overflow-hidden flex flex-col flex-1 border border-slate-100 bg-slate-50/30 relative">
           
-          <div className="flex items-center gap-3">
-            {/* THÊM NÚT IN PHIẾU Ở ĐÂY */}
-            <button 
-              onClick={() => handlePrint()} 
-              className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
-            >
-              <Printer className="w-4 h-4" /> In phiếu
-            </button>
+          {/* ── HEADER ── */}
+          <div className="px-5 sm:px-6 py-4 flex justify-between items-center border-b border-slate-100 bg-white shrink-0 z-10">
+            <div className="flex items-center gap-4">
+              <div className="p-2.5 bg-indigo-100 text-indigo-600 rounded-xl hidden sm:flex items-center justify-center">
+                <ArrowLeftRight className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-3">
+                  <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">
+                    Chi tiết Phiếu chuyển <span className="text-indigo-600 ml-1">{transfer.code}</span>
+                  </h2>
+                  {STATUS_BADGE[transfer.status] ? (
+                    <span className={`inline-flex px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg border shadow-sm ${STATUS_BADGE[transfer.status].className}`}>
+                      {STATUS_BADGE[transfer.status].label}
+                    </span>
+                  ) : (
+                    <span className="inline-flex px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg border shadow-sm bg-slate-100 text-slate-600 border-slate-200">
+                      {transfer.status}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-slate-500 font-medium mt-1">Điều chuyển hàng hóa giữa các kho / chi nhánh</p>
+              </div>
+            </div>
             
-            <button onClick={onClose} className="text-gray-500 hover:text-gray-700 p-1 rounded-full hover:bg-gray-100">
-              <X className="w-5 h-5" />
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={() => handlePrint()} 
+                className="px-4 py-2.5 rounded-xl text-sm font-bold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 hover:text-indigo-600 transition-colors shadow-sm flex items-center gap-2"
+              >
+                <Printer className="w-4 h-4" /> <span className="hidden sm:inline">In phiếu</span>
+              </button>
+              <button 
+                onClick={onClose} 
+                className="w-10 h-10 flex items-center justify-center rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors border border-transparent hover:border-rose-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* ── BODY ── */}
+          <div className="p-5 sm:p-6 overflow-y-auto flex-1 custom-scrollbar">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              
+              {/* CỘT TRÁI: THÔNG TIN TRACKING & GHI CHÚ */}
+              <div className="lg:col-span-1 space-y-6">
+                
+                {/* Tuyến đường */}
+                <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)]">
+                  <h3 className="font-bold text-slate-900 flex items-center gap-2 border-b border-slate-50 pb-3 mb-4">
+                    <div className="p-1.5 bg-blue-100 text-blue-600 rounded-lg"><MapPin className="w-4 h-4" /></div>
+                    Tuyến đường
+                  </h3>
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Từ kho (Xuất)</p>
+                      <p className="font-bold text-slate-800 bg-slate-50 px-3 py-2.5 rounded-xl border border-slate-100">
+                        {warehouseMap.get(transfer.fromWarehouseId) || transfer.fromWarehouseId}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Đến kho (Nhập)</p>
+                      <p className="font-bold text-slate-800 bg-slate-50 px-3 py-2.5 rounded-xl border border-slate-100">
+                        {warehouseMap.get(transfer.toWarehouseId) || transfer.toWarehouseId}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Thời gian */}
+                <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)]">
+                  <h3 className="font-bold text-slate-900 flex items-center gap-2 border-b border-slate-50 pb-3 mb-4">
+                    <div className="p-1.5 bg-amber-100 text-amber-600 rounded-lg"><Clock className="w-4 h-4" /></div>
+                    Thời gian (Tracking)
+                  </h3>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm font-medium text-slate-500">Ngày tạo phiếu</span>
+                      <span className="text-sm font-bold text-slate-800">{formatDateTime(transfer.createdAt)}</span>
+                    </div>
+                    
+                    {transfer.dispatchedAt && (
+                      <div className="flex justify-between items-center pt-4 border-t border-slate-50">
+                        <span className="text-sm font-medium text-slate-500">Thời gian xuất kho</span>
+                        <span className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2.5 py-1.5 rounded-lg">
+                          {formatDateTime(transfer.dispatchedAt)}
+                        </span>
+                      </div>
+                    )}
+
+                    {transfer.receivedAt && (
+                      <div className="flex justify-between items-center pt-4 border-t border-slate-50">
+                        <span className="text-sm font-medium text-slate-500">Thời gian nhận</span>
+                        <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-1.5 rounded-lg">
+                          {formatDateTime(transfer.receivedAt)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Ghi chú */}
+                {transfer.note && (
+                  <div className="bg-blue-50/50 p-5 rounded-2xl border border-blue-100 shadow-sm">
+                    <h3 className="font-bold text-blue-800 text-[11px] mb-2 uppercase tracking-wider flex items-center gap-1.5">
+                      <Info className="w-3.5 h-3.5" /> Ghi chú / Lý do:
+                    </h3>
+                    <p className="text-sm text-blue-900/80 font-medium leading-relaxed italic">"{transfer.note}"</p>
+                  </div>
+                )}
+
+                {/* Thông báo Đơn gom */}
+                {transfer.referenceOrderId && (
+                  <div className="bg-indigo-50 p-5 rounded-2xl border border-indigo-100 shadow-sm">
+                    <h3 className="font-bold text-indigo-800 flex items-center gap-2 mb-2">
+                      <ShoppingBag className="w-4 h-4" /> Đơn hàng chờ gom
+                    </h3>
+                    <p className="text-[13px] text-indigo-900/80 leading-relaxed font-medium">
+                      Phiếu này được tạo tự động để luân chuyển hàng hóa phục vụ cho Đơn hàng Online. 
+                      Khi bạn bấm <b>Nhận hàng</b>, Đơn hàng gốc sẽ được kích hoạt để đóng gói.
+                    </p>
+                  </div>
+                )}
+                
+              </div>
+
+              {/* CỘT PHẢI: DANH SÁCH HÀNG HÓA */}
+              <div className="lg:col-span-2 flex flex-col gap-6 h-full">
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] overflow-hidden flex flex-col flex-1">
+                  
+                  <div className="p-4 border-b border-slate-50 bg-slate-50/50 flex items-center gap-2.5 shrink-0">
+                    <div className="p-1.5 bg-slate-200 text-slate-600 rounded-lg"><Package className="w-4 h-4" /></div>
+                    <h3 className="font-bold text-slate-900">Chi tiết hàng hóa <span className="text-slate-500 font-medium ml-1">({transfer.items.length})</span></h3>
+                  </div>
+                  
+                  <div className="overflow-x-auto custom-scrollbar p-2 flex-1">
+                    <table className="w-full text-sm text-left min-w-[500px]">
+                      <thead className="text-[11px] text-slate-500 uppercase font-bold bg-white/90 backdrop-blur sticky top-0 z-10 border-b border-slate-100">
+                        <tr>
+                          <th className="px-5 py-3">Sản phẩm</th>
+                          <th className="px-5 py-3 text-center">Số lượng gửi</th>
+                          <th className="px-5 py-3 text-center">Thực nhận</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {(transfer.items || []).length === 0 ? (
+                          <tr>
+                            <td colSpan={3} className="py-16 text-center text-slate-500 font-medium">Không có sản phẩm nào trong phiếu này.</td>
+                          </tr>
+                        ) : (
+                          transfer.items.map((item: any) => {
+                            const productInfo = productMap.get(item.productId);
+                            const isReceived = transfer.status === 'RECEIVED';
+                            const isShortage = isReceived && item.receivedQty < item.quantity;
+                            
+                            return (
+                              <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                                <td className="px-5 py-4">
+                                  <p className="font-bold text-slate-800 leading-snug">{productInfo?.name || 'Đang tải...'}</p>
+                                  <p className="text-[11px] text-slate-400 font-mono font-semibold mt-1">SKU: {productInfo?.isbnBarcode || item.productId.slice(0,8)}</p>
+                                </td>
+                                
+                                <td className="px-5 py-4 text-center">
+                                  <span className="inline-flex items-center justify-center min-w-[2.5rem] px-2.5 py-1 font-bold text-slate-700 bg-slate-100 rounded-lg border border-slate-200/60 shadow-sm">
+                                    {item.quantity}
+                                  </span>
+                                </td>
+                                
+                                <td className="px-5 py-4 text-center">
+                                  {isReceived ? (
+                                    <span className={`inline-flex items-center justify-center min-w-[2.5rem] px-2.5 py-1 font-bold rounded-lg border shadow-sm ${
+                                      isShortage 
+                                        ? 'bg-rose-50 text-rose-700 border-rose-200' 
+                                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                    }`}>
+                                      {item.receivedQty}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 italic font-medium text-xs">Chờ nhận...</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── FOOTER ACTIONS ── */}
+          <div className="px-5 sm:px-6 py-4 border-t border-slate-100 bg-white flex justify-end shrink-0 z-10">
+            <button 
+              onClick={onClose} 
+              className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors"
+            >
+              Đóng cửa sổ
             </button>
           </div>
-        </div>
 
-        {/* Body */}
-        <div className="p-5 overflow-y-auto flex-1 custom-scrollbar grid grid-cols-1 md:grid-cols-3 gap-6">
-          
-          {/* Cột trái: Thông tin Tracking & Ghi chú */}
-          <div className="md:col-span-1 space-y-5">
-            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 space-y-3">
-              <h3 className="font-semibold text-gray-800 flex items-center gap-2 border-b pb-2">
-                <MapPin className="w-4 h-4 text-blue-500" /> Tuyến đường
-              </h3>
-              <div>
-                <p className="text-xs text-gray-500">Từ kho (Xuất)</p>
-                <p className="font-medium text-gray-800">{warehouseMap.get(transfer.fromWarehouseId) || transfer.fromWarehouseId}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Đến kho (Nhập)</p>
-                <p className="font-medium text-gray-800">{warehouseMap.get(transfer.toWarehouseId) || transfer.toWarehouseId}</p>
-              </div>
-            </div>
-
-            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 space-y-3">
-              <h3 className="font-semibold text-gray-800 flex items-center gap-2 border-b pb-2">
-                <Clock className="w-4 h-4 text-amber-500" /> Thời gian (Tracking)
-              </h3>
-              <div>
-                <p className="text-xs text-gray-500">Ngày tạo phiếu</p>
-                <p className="text-sm">{formatDateTime(transfer.createdAt)}</p>
-              </div>
-              {transfer.dispatchedAt && (
-                <div>
-                  <p className="text-xs text-gray-500">Thời gian xuất kho</p>
-                  <p className="text-sm font-medium text-amber-600">{formatDateTime(transfer.dispatchedAt)}</p>
-                </div>
-              )}
-              {transfer.receivedAt && (
-                <div>
-                  <p className="text-xs text-gray-500">Thời gian nhận hàng</p>
-                  <p className="text-sm font-medium text-green-600">{formatDateTime(transfer.receivedAt)}</p>
-                </div>
-              )}
-            </div>
-
-            {transfer.note && (
-              <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                <h3 className="font-semibold text-blue-800 flex items-center gap-2 mb-1">
-                  <Info className="w-4 h-4" /> Ghi chú
-                </h3>
-                <p className="text-sm text-blue-900 italic">{transfer.note}</p>
-              </div>
-            )}
+          {/* ── KHỐI IN ẨN ── */}
+          <div className="hidden">
+            <TransferPrintTemplate 
+              ref={printRef} 
+              transfer={transfer} 
+              warehouses={warehouses || []} 
+              products={products || []}
+            />
           </div>
 
-          {/* Cột phải: Danh sách hàng hóa */}
-          <div className="md:col-span-2 flex flex-col">
-            <h3 className="font-semibold text-gray-800 flex items-center gap-2 mb-3">
-              <Package className="w-4 h-4 text-gray-500" /> Chi tiết hàng hóa ({transfer.items.length})
-            </h3>
-            <div className="border rounded-xl overflow-hidden shadow-sm flex-1">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-gray-100 text-gray-600 border-b">
-                  <tr>
-                    <th className="p-3">Sản phẩm</th>
-                    <th className="p-3 text-center">Số lượng gửi</th>
-                    <th className="p-3 text-center">Thực nhận</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {transfer.items.map((item: any) => (
-                    <tr key={item.id} className="hover:bg-gray-50">
-                      <td className="p-3">
-                        <p className="font-medium text-gray-800">{productMap.get(item.productId) || 'Đang tải tên...'}</p>
-                        <p className="text-xs text-gray-400 font-mono mt-0.5">{item.productId.slice(0, 8)}...</p>
-                      </td>
-                      <td className="p-3 text-center font-semibold text-gray-700">
-                        {item.quantity}
-                      </td>
-                      <td className="p-3 text-center font-bold">
-                        {transfer.status === 'RECEIVED' ? (
-                          <span className={item.receivedQty < item.quantity ? 'text-red-500' : 'text-green-600'}>
-                            {item.receivedQty}
-                          </span>
-                        ) : (
-                          <span className="text-gray-400 italic">Chờ...</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
         </div>
-
-        {/* Footer */}
-        <div className="p-4 border-t bg-gray-50 rounded-b-2xl flex justify-end shrink-0">
-          <button onClick={onClose} className="btn-secondary">Đóng</button>
-        </div>
-
-        {/* === THÊM COMPONENT ẨN ĐỂ IN VÀO ĐÂY === */}
-        <div className="hidden">
-          <TransferPrintTemplate 
-            ref={printRef} 
-            transfer={transfer} 
-            warehouses={warehouses || []} 
-            products={products || []}
-          />
-        </div>
-
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

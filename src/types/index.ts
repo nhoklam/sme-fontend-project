@@ -290,6 +290,8 @@ export interface InternalTransfer {
   receivedAt?: string;
   items: TransferItem[];
   createdAt: string;
+  referenceOrderId?: string; // Đã thêm
+  transferReason?: string;   // Đã thêm
 }
 
 export type TransferStatus = 'DRAFT' | 'DISPATCHED' | 'RECEIVED' | 'CANCELLED';
@@ -428,7 +430,7 @@ export interface OrderResponse {
   statusHistory?: OrderStatusHistoryResponse[];
 }
 
-export type OrderStatus = 'PENDING' | 'PACKING' | 'SHIPPING' | 'DELIVERED' | 'CANCELLED' | 'RETURNED';
+export type OrderStatus = 'PENDING' | 'PACKING' | 'WAITING_FOR_CONSOLIDATION' | 'SHIPPING' | 'DELIVERED' | 'CANCELLED' | 'RETURNED';
 export type PaymentStatus = 'UNPAID' | 'PAID' | 'REFUNDED';
 
 export interface OrderItemResponse {

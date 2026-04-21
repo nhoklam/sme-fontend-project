@@ -23,7 +23,6 @@ export const financeService = {
       params: warehouseId ? { warehouseId } : {}
     }),
 
-  // ĐÃ BỔ SUNG: Lấy tổng số nợ hiện tại của 1 NCC cụ thể
   getTotalOutstandingBySupplier: (supplierId: string) =>
     api.get<ApiResponse<number>>(`/finance/supplier-debts/supplier/${supplierId}/total`),
 
