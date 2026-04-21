@@ -15,7 +15,7 @@ export default function BarcodeScanner({ onScanSuccess, onClose }: BarcodeScanne
   useEffect(() => {
     let isMounted = true;
     
-    // ĐÃ SỬA: Đưa formatsToSupport vào config khi khởi tạo Html5Qrcode
+    // Đưa formatsToSupport vào config khi khởi tạo Html5Qrcode
     const html5QrCode = new Html5Qrcode("reader-barcode", {
       formatsToSupport: [
         Html5QrcodeSupportedFormats.CODE_128,
@@ -28,25 +28,33 @@ export default function BarcodeScanner({ onScanSuccess, onClose }: BarcodeScanne
 
     const startScanner = async () => {
       try {
-        // BƯỚC QUAN TRỌNG NHẤT: Mẹo ép trình duyệt trên điện thoại (iOS/Android) 
-        // phải hiện Popup xin quyền truy cập Camera ngay lập tức
-        await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        // 1. ÉP TRÌNH DUYỆT HIỆN POPUP XIN QUYỀN
+        // Fallback dùng video: true nếu facingMode bị thiết bị từ chối
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).catch(async () => {
+             return await navigator.mediaDevices.getUserMedia({ video: true });
+        });
         
+        // 2. QUAN TRỌNG NHẤT: Tắt luồng stream ngay lập tức để "nhả" phần cứng Camera
+        // Nếu không có dòng này, Android/Xiaomi sẽ bị đen màn hình do camera đang bị chiếm dụng
+        stream.getTracks().forEach(track => track.stop());
+
+        // 3. Đợi phần cứng camera reset (đặc biệt cần thiết trên Android)
+        await new Promise(resolve => setTimeout(resolve, 500));
+
         if (!isMounted) return;
 
-        // Khởi động Engine quét mã
+        // 4. Khởi động Engine quét mã của thư viện
         await html5QrCode.start(
           { facingMode: "environment" },
           {
             fps: 15,
             qrbox: { width: 250, height: 150 }, // Vẽ vùng quét tỉ lệ chuẩn mã vạch
             aspectRatio: 1.0
-            // ĐÃ XÓA formatsToSupport ở đây
           },
           (decodedText) => {
             if (isMounted) {
-              // Tạm dừng ngay lập tức để tránh quét trùng lặp n lần
-              html5QrCode.pause(); 
+              // Tạm dừng ngay lập tức để tránh quét trùng lặp nhiều lần
+              html5QrCode.pause(true); 
               onScanSuccess(decodedText);
             }
           },
@@ -57,8 +65,8 @@ export default function BarcodeScanner({ onScanSuccess, onClose }: BarcodeScanne
       } catch (err: any) {
         console.error("Camera start error:", err);
         if (isMounted) {
-          setError("Không thể mở Camera. Vui lòng cấp quyền truy cập Camera cho trang web trong Cài đặt điện thoại.");
-          toast.error("Bị từ chối quyền truy cập Camera!");
+          setError("Không thể mở Camera. Vui lòng đóng các tab/ứng dụng khác đang dùng camera và thử lại.");
+          toast.error("Lỗi khởi động Camera!");
         }
       } finally {
         if (isMounted) {
@@ -67,7 +75,7 @@ export default function BarcodeScanner({ onScanSuccess, onClose }: BarcodeScanne
       }
     };
 
-    // Delay nhẹ 300ms để DOM kịp render div id="reader-barcode"
+    // Delay nhẹ để DOM kịp render div id="reader-barcode"
     setTimeout(() => {
       startScanner();
     }, 300);
