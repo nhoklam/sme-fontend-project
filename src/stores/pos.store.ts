@@ -20,6 +20,7 @@ interface POSState {
   addItem: (item: CartItem) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   removeItem: (productId: string) => void;
+  updateUnitPrice: (productId: string, unitPrice: number) => void; // Thêm dòng này
   setCustomer: (customer: Customer | null) => void;
   setPointsToUse: (pts: number) => void;
   setNote: (note: string) => void;
@@ -77,6 +78,16 @@ export const usePOSStore = create<POSState>()(
 
       removeItem: (productId) =>
         set((state) => ({ items: state.items.filter((i) => i.productId !== productId) })),
+      
+      updateUnitPrice: (productId, unitPrice) => {
+        set((state) => ({
+          items: state.items.map((i) =>
+            i.productId === productId
+              ? { ...i, unitPrice, subtotal: unitPrice * i.quantity }
+              : i
+          ),
+        }));
+      },
 
       setCustomer: (customer) => set({ customer, pointsToUse: 0 }),
 

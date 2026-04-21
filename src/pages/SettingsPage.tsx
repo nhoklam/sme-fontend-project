@@ -610,7 +610,7 @@ function AIDocumentsTab() {
     setUploading(true);
     try {
       const res = await aiService.uploadDocument(file, file.name);
-      toast.success(`Học thành công: ${res.data.data.chunkCount ?? 'nhiều'} đoạn kiến thức`);
+      toast.success(`Học thành công: ${res.data.data.chunks ?? 'nhiều'} đoạn kiến thức`); // Sửa ở đây
       qc.invalidateQueries({ queryKey: ['ai-documents'] });
     } catch {
       toast.error('Lỗi upload tài liệu');

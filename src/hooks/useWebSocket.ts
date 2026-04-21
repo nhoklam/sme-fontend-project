@@ -29,7 +29,7 @@ interface UseWebSocketOptions {
 // ── URL helpers ──────────────────────────────────────────────
 // Tự động resolve WS URL từ API base URL
 function getWsUrl(): string {
-  const apiBase = import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api';
+  const apiBase = (import.meta as any).env.VITE_API_URL ?? 'http://localhost:8080/api';
   // Xóa dấu slash ở cuối nếu có để tránh bị lỗi //ws
   const cleanBase = apiBase.replace(/\/$/, '');
   
@@ -123,7 +123,7 @@ export function useWebSocket({ warehouseId, onMessage, enabled = true }: UseWebS
       },
 
       // Tắt log STOMP spam ở production
-      debug: import.meta.env.DEV ? (str) => console.debug('[STOMP]', str) : () => {},
+      debug: (import.meta as any).env.DEV ? (str: any) => console.debug('[STOMP]', str) : () => {},
     });
 
     client.activate();

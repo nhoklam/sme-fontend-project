@@ -31,7 +31,7 @@ const supplierSchema = z.object({
   address: z.string().optional(),
   bankAccount: z.string().optional(),
   bankName: z.string().optional(),
-  paymentTerms: z.coerce.number().min(0, 'Số ngày nợ phải lớn hơn hoặc bằng 0').default(30),
+  paymentTerms: z.coerce.number().min(0, 'Số ngày nợ phải lớn hơn hoặc bằng 0'),
   notes: z.string().optional(),
 });
 

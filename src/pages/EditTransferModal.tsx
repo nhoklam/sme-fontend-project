@@ -64,7 +64,7 @@ export function EditTransferModal({ transferId, onClose, onSaved }: Props) {
 
   const { data: sourceInventory, isLoading: loadingInv } = useQuery({
     queryKey: ['inventory', form.fromWarehouseId],
-    queryFn: () => inventoryService.getByWarehouse(form.fromWarehouseId).then(r => r.data.data),
+    queryFn: () => inventoryService.searchInventory(form.fromWarehouseId, { page: 0, size: 1000 }).then((r: any) => r.data.data.content),
     enabled: !!form.fromWarehouseId,
   });
 

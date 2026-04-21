@@ -136,7 +136,7 @@ export default function TransfersPage() {
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsHost = window.location.hostname;
-    const brokerURL = import.meta.env.VITE_WS_URL || `${wsProtocol}//${wsHost}:8080/api/ws`;
+    const brokerURL = (import.meta as any).env.VITE_WS_URL || `${wsProtocol}//${wsHost}:8080/api/ws`;
 
     const client = new Client({
       brokerURL: brokerURL,
