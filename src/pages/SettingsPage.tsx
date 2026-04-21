@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Users, Warehouse, Bot, UserCheck, UserX, Plus, Upload, FileText,
+  X, Users, Warehouse, Bot, UserCheck, UserX, Plus, Upload, FileText,
   Trash2, Eye, Edit, Search, Filter, Lock, Phone, Clock,
   Shield, User2, History, ChevronDown, CheckCircle2, Mail, LayoutDashboard, BrainCircuit
 } from 'lucide-react';

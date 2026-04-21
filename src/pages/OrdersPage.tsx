@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { 
-  Package, Search, RefreshCw, Eye, MapPin, Store, Truck, Plus, 
+  X, Package, Search, RefreshCw, Eye, MapPin, Store, Truck, Plus, 
   CheckCircle, Filter, ShoppingBag, ArrowRight, ChevronDown, BarChart3
 } from 'lucide-react';
 import { 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, MapPin, CreditCard, Package, Clock, Truck, Store, CheckCircle, XCircle, RotateCcw, Printer, User, FileText } from 'lucide-react';
+import { X, ArrowLeft, MapPin, CreditCard, Package, Clock, Truck, Store, CheckCircle, XCircle, RotateCcw, Printer, User, FileText } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import { orderService } from '@/services/order.service';
 import { authService } from '@/services/auth.service';
