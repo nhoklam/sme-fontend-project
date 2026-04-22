@@ -21,6 +21,7 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'Tất cả trạng thái' },
   { value: 'PENDING',   label: 'Chờ xử lý' },
   { value: 'PACKING',   label: 'Đang đóng gói' },
+  { value: 'WAITING_FOR_CONSOLIDATION', label: 'Chờ gom hàng' }, // <-- ĐÃ THÊM MỚI Ở ĐÂY
   { value: 'SHIPPING',  label: 'Đang giao' },
   { value: 'DELIVERED', label: 'Đã giao' },
   { value: 'CANCELLED', label: 'Đã hủy' },
@@ -157,7 +158,6 @@ export default function OrdersPage() {
 
       const statusLabel = getOrderStatusLabel(o.status);
       if (!statusMap[statusLabel]) {
-        // Gán màu ngẫu nhiên nhưng ổn định dựa trên logic
         let color = '#94a3b8'; // default
         if (o.status === 'PENDING') color = '#f59e0b';
         if (o.status === 'PACKING') color = '#3b82f6';

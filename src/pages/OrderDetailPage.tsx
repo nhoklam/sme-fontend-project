@@ -1,10 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { X, ArrowLeft, MapPin, CreditCard, Package, Clock, Truck, Store, CheckCircle, XCircle, RotateCcw, Printer, User, FileText } from 'lucide-react';
+import { X, ArrowLeft, MapPin, CreditCard, Package, Clock, Truck, Store, CheckCircle, XCircle, RotateCcw, Printer, User } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import { orderService } from '@/services/order.service';
-import { authService } from '@/services/auth.service';
 import { formatCurrency, formatDateTime, getOrderStatusColor, getOrderStatusLabel } from '@/lib/utils';
 import { PageLoader, Spinner } from '@/components/ui';
 import toast from 'react-hot-toast';
@@ -24,35 +23,9 @@ export default function OrderDetailPage() {
 
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [returnReason, setReturnReason] = useState('');
-
-  // State map UUID -> Tên nhân viên
-  const [userMap, setUserMap] = useState<Record<string, string>>({});
   
   // Ref in ấn
   const printRef = useRef<HTMLDivElement>(null);
-
-  // Gọi API lấy danh sách User
-  useEffect(() => {
-    const fetchUsers = async () => {
-      try {
-        const res = await authService.getUsers();
-        const users = res.data.data;
-        const mapping = users.reduce((acc: any, u: any) => {
-          acc[u.id] = u.fullName;
-          return acc;
-        }, {});
-        setUserMap(mapping);
-      } catch (error) {
-        console.error('Lỗi tải danh sách người dùng', error);
-      }
-    };
-    fetchUsers();
-  }, []);
-
-  const renderUserName = (uuid?: string | null) => {
-    if (!uuid) return "Hệ thống";
-    return userMap[uuid] || uuid; // Trả về Tên nếu có, không thì hiện UUID
-  };
 
   const { data: order, isLoading, isRefetching } = useQuery({
     queryKey: ['order', id],
@@ -149,7 +122,6 @@ export default function OrderDetailPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-          {/* NÚT IN VẬN ĐƠN */}
           <button 
             onClick={() => handlePrint()}
             className="px-5 py-3 rounded-xl font-bold text-sm text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 hover:text-indigo-600 transition-colors flex items-center gap-2 shadow-sm flex-1 lg:flex-none justify-center"
@@ -157,7 +129,7 @@ export default function OrderDetailPage() {
             <Printer className="w-4 h-4" /> In phiếu giao
           </button>
 
-          {(order.status === 'PENDING' || order.status === 'PACKING') && (
+          {['PENDING', 'PACKING', 'WAITING_FOR_CONSOLIDATION'].includes(order.status) && (
             <button 
               onClick={() => setShowCancelModal(true)} 
               disabled={updateMut.isPending || isRefetching} 
@@ -228,12 +200,13 @@ export default function OrderDetailPage() {
               </div>
             )}
             
+            {/* ĐÃ SỬA: LẤY TRỰC TIẾP TÊN TỪ BACKEND */}
             {order.packedAt && (
               <div className="flex justify-between items-start border-b border-slate-100/80 pb-4">
                 <span className="text-slate-500 font-semibold uppercase tracking-wider text-xs">Đóng gói bởi</span>
                 <div className="text-right">
                   <span className="font-bold text-slate-800 flex items-center justify-end gap-1.5">
-                    <User className="w-4 h-4 text-slate-400"/> {renderUserName(order.packedBy)}
+                    <User className="w-4 h-4 text-slate-400"/> {order.packedByName || order.packedBy || 'Hệ thống'}
                   </span>
                   <span className="text-slate-400 font-medium text-xs mt-1 inline-block">{formatDateTime(order.packedAt)}</span>
                 </div>
@@ -270,7 +243,7 @@ export default function OrderDetailPage() {
                     {order.paymentStatus === 'PAID' ? 'Đã thanh toán' : 'Chưa TT'}
                   </span>
                   {order.paymentMethod === 'COD' && order.codReconciled && (
-                     <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-200 shadow-sm uppercase tracking-wider">Đã đối soát</span>
+                     <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100 shadow-sm uppercase tracking-wider">Đã đối soát</span>
                   )}
                 </div>
               </div>
@@ -386,7 +359,8 @@ export default function OrderDetailPage() {
                       <div className="text-slate-500 text-xs mt-4 font-medium flex items-center gap-1.5 pt-3 border-t border-slate-50">
                         <User className="w-4 h-4 text-slate-400"/> Thực hiện bởi: 
                         <span className="text-indigo-600 font-bold bg-indigo-50 px-2.5 py-1 rounded-md border border-indigo-100/60">
-                          {renderUserName(h.changedBy)}
+                           {/* ĐÃ SỬA: Sử dụng tên do Backend cấp */}
+                           {h.changedByName || h.changedBy || 'Hệ thống'}
                         </span>
                       </div>
                     </div>

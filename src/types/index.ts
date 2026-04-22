@@ -421,6 +421,7 @@ export interface OrderResponse {
   shippingProvider?: string;
   cancelledReason?: string;
   packedBy?: string;
+  packedByName?: string;
   packedAt?: string;
   codReconciled: boolean;
   note?: string;
@@ -447,6 +448,7 @@ export interface OrderStatusHistoryResponse {
   newStatus: string;
   note?: string;
   changedBy?: string;
+  changedByName?: string;
   createdAt: string;
 }
 

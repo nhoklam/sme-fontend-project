@@ -41,12 +41,18 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
 
-  // GỌI API SUGGEST KHI GIỎ HÀNG HOẶC TỈNH THAY ĐỔI
+  // ĐÃ SỬA: GỌI API TỐI ƯU HƠN, KHÔNG GỌI KHI DÒNG TRỐNG
   useEffect(() => {
     const fetchSuggestions = async () => {
-      // Hủy gợi ý nếu chưa đủ điều kiện
-      if (!isAdmin() || !form.provinceCode || items.length === 0 || !items[0].productId) {
-        setConsolidationPlans([]); 
+      // 1. Lọc ra những item ĐÃ CHỌN SẢN PHẨM và CÓ SỐ LƯỢNG
+      const validItems = items.filter(i => i.productId && i.quantity > 0);
+
+      // 2. Chặn gọi API nếu: Không phải admin, chưa chọn tỉnh, giỏ hàng trống, 
+      // HOẶC đang có dòng trống chưa chọn SP (validItems.length !== items.length)
+      if (!isAdmin() || !form.provinceCode || validItems.length === 0 || validItems.length !== items.length) {
+        if (validItems.length === 0) {
+          setConsolidationPlans([]); // Chỉ clear list khi xóa hết giỏ hàng
+        }
         setSuggestError(null);
         return;
       }
@@ -57,7 +63,7 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
       try {
         const payload = {
           provinceCode: form.provinceCode,
-          items: items.map(item => ({ productId: item.productId, quantity: item.quantity })).filter(i => i.productId)
+          items: validItems.map(item => ({ productId: item.productId, quantity: item.quantity }))
         };
         const response = await orderService.suggestBranch(payload);
         setConsolidationPlans(response.data?.data || []);
@@ -74,7 +80,6 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
       }
     };
     
-    // Tăng thời gian đợi debounce lên 800ms để người dùng gõ số lượng xong hẳn mới gọi API
     const timeoutId = setTimeout(() => fetchSuggestions(), 800);
     return () => clearTimeout(timeoutId);
   }, [form.provinceCode, items, isAdmin]);
@@ -201,6 +206,9 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
     createMut.mutate();
   };
 
+  // Đã check valid array
+  const hasValidItems = items.length > 0 && items.some(i => i.productId);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-6xl overflow-hidden flex flex-col max-h-[95vh] animate-slide-up">
@@ -233,42 +241,49 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
                 <div><label className="label">Tỉnh / TP Giao hàng *</label><select className="input" value={form.provinceCode} onChange={e => setForm({ ...form, provinceCode: e.target.value })}><option value="">-- Chọn Tỉnh/TP --</option>{PROVINCES.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}</select></div>
               </div>
 
-              {/* KHU VỰC HIỂN THỊ KẾ HOẠCH GOM HÀNG */}
-              {isAdmin() && form.provinceCode && items.length > 0 && items[0].productId && (
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                  <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2"><Building2 className="w-4 h-4 text-indigo-600" /> Kế hoạch Phân bổ Kho (Consolidation Plan)</h4>
+              {/* ĐÃ SỬA: GIAO DIỆN HIỂN THỊ KẾ HOẠCH GOM HÀNG */}
+              {isAdmin() && form.provinceCode && hasValidItems && (
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl min-h-[120px] transition-all">
+                  <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-indigo-600" /> Kế hoạch Phân bổ Kho (Consolidation Plan)
+                    {/* Giữ nguyên icon xoay bên cạnh thay vì xóa cả khối đi */}
+                    {isSuggesting && <Spinner size="sm" className="ml-2 text-indigo-500" />}
+                  </h4>
                   
-                  {isSuggesting ? (
-                    <div className="text-sm text-indigo-600 flex items-center gap-2"><Spinner size="sm"/> Đang tính toán kho phù hợp...</div> 
-                  ) : suggestError ? (
-                    <p className="text-sm text-red-600 font-medium flex items-center gap-1"><AlertCircle className="w-4 h-4"/> {suggestError}</p>
-                  ) : consolidationPlans.length > 0 ? (
-                    <div className="space-y-3">
-                      {consolidationPlans.map((plan: any) => {
-                        const isSelected = form.assignedWarehouseId === plan.warehouseId;
-                        return (
-                          <div key={plan.warehouseId} onClick={() => setForm({ ...form, assignedWarehouseId: plan.warehouseId })} className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${isSelected ? 'border-indigo-500 bg-white shadow-md' : 'border-slate-200 bg-white/50 hover:border-indigo-300'}`}>
-                            <div className="flex justify-between items-start mb-2">
-                              <p className="font-bold text-slate-900">{plan.warehouseName} {plan.isSameProvince && <span className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-0.5 rounded ml-2">Cùng Tỉnh</span>}</p>
-                              {isSelected ? <CheckCircle2 className="w-5 h-5 text-indigo-600" /> : <div className="w-5 h-5 rounded-full border-2 border-slate-300"/>}
-                            </div>
-                            {plan.isReadyToShip ? (
-                              <p className="text-sm text-emerald-600 bg-emerald-50 px-2 py-1 rounded inline-block">✓ Kho đủ hàng. Giao ngay!</p>
-                            ) : (
-                              <div className="text-sm text-amber-700 bg-amber-50 p-2 rounded border border-amber-100">
-                                <p className="font-bold flex items-center gap-1"><AlertCircle className="w-4 h-4"/> Thiếu hàng. Tự động luân chuyển từ:</p>
-                                <ul className="list-disc ml-5 mt-1 opacity-90">
-                                  {(plan.transferRequirements || []).map((req: any, idx: number) => (
-                                    <li key={idx}>Gửi <b>{req.quantity}x {req.productName}</b> từ <b>{req.fromWarehouseName}</b></li>
-                                  ))}
-                                </ul>
+                  {/* Bọc opacity lại để làm mờ nhẹ khi loading chứ không xóa bỏ */}
+                  <div className={`transition-opacity duration-300 ${isSuggesting ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+                    {suggestError ? (
+                      <p className="text-sm text-red-600 font-medium flex items-center gap-1"><AlertCircle className="w-4 h-4"/> {suggestError}</p>
+                    ) : consolidationPlans.length > 0 ? (
+                      <div className="space-y-3">
+                        {consolidationPlans.map((plan: any) => {
+                          const isSelected = form.assignedWarehouseId === plan.warehouseId;
+                          return (
+                            <div key={plan.warehouseId} onClick={() => setForm({ ...form, assignedWarehouseId: plan.warehouseId })} className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${isSelected ? 'border-indigo-500 bg-white shadow-md' : 'border-slate-200 bg-white/50 hover:border-indigo-300'}`}>
+                              <div className="flex justify-between items-start mb-2">
+                                <p className="font-bold text-slate-900">{plan.warehouseName} {plan.isSameProvince && <span className="bg-emerald-100 text-emerald-700 text-[10px] px-2 py-0.5 rounded ml-2">Cùng Tỉnh</span>}</p>
+                                {isSelected ? <CheckCircle2 className="w-5 h-5 text-indigo-600" /> : <div className="w-5 h-5 rounded-full border-2 border-slate-300"/>}
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : <p className="text-sm text-red-600 font-medium">❌ Hệ thống hết hàng cho đơn này.</p>}
+                              {plan.isReadyToShip ? (
+                                <p className="text-sm text-emerald-600 bg-emerald-50 px-2 py-1 rounded inline-block">✓ Kho đủ hàng. Giao ngay!</p>
+                              ) : (
+                                <div className="text-sm text-amber-700 bg-amber-50 p-2 rounded border border-amber-100">
+                                  <p className="font-bold flex items-center gap-1"><AlertCircle className="w-4 h-4"/> Thiếu hàng. Tự động luân chuyển từ:</p>
+                                  <ul className="list-disc ml-5 mt-1 opacity-90">
+                                    {(plan.transferRequirements || []).map((req: any, idx: number) => (
+                                      <li key={idx}>Gửi <b>{req.quantity}x {req.productName}</b> từ <b>{req.fromWarehouseName}</b></li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-red-600 font-medium">❌ Hệ thống hết hàng cho đơn này.</p>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
