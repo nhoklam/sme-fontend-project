@@ -1,21 +1,3 @@
-/**
- * CodReconciliationPage — Đối soát COD (Admin only)
- *
- * Flow nghiệp vụ theo Admin spec:
- *   1. Các đơn COD được DELIVERED và chưa đối soát (codReconciled=false)
- *   2. Đối tác vận chuyển (GHTK, Viettel Post...) chuyển khoản tổng về công ty
- *   3. Admin upload dữ liệu đối soát → hệ thống mark những đơn đó là PAID + codReconciled=true
- *   4. Tạo một khoản nhập Ngân hàng (TK 112) cho từng đơn đã đối soát
- *
- * Route: /cod-reconciliation (Admin only, thêm vào App.tsx + Sidebar.tsx)
- *
- * Tích hợp vào App.tsx:
- *   import CodReconciliationPage from '@/pages/CodReconciliationPage';
- *   <Route path="cod-reconciliation" element={<RoleRoute roles={['ROLE_ADMIN']}><CodReconciliationPage /></RoleRoute>} />
- *
- * Tích hợp vào Sidebar.tsx (nhóm TÀI CHÍNH):
- *   { icon: Receipt, label: 'Đối soát COD', to: '/cod-reconciliation', roles: ['ROLE_ADMIN'] }
- */
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
@@ -262,7 +244,7 @@ export default function CodReconciliationPage() {
                     type="checkbox"
                     className="accent-indigo-600 w-4 h-4 rounded cursor-pointer"
                     checked={allChecked}
-                    ref={el => el && (el.indeterminate = someChecked)}
+                    ref={el => { if (el) el.indeterminate = someChecked; }}
                     onChange={toggleAll}
                   />
                 </th>

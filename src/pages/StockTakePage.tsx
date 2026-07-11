@@ -854,6 +854,8 @@ export default function StockTakePage() {
                 <Pagination
                   page={page}
                   totalPages={data.totalPages}
+                  totalElements={data.totalElements}
+                  size={PAGE_SIZE}
                   onPageChange={setPage}
                 />
               </div>

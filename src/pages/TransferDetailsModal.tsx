@@ -166,7 +166,7 @@ export function TransferDetailsModal({ transferId, onClose }: Props) {
                       <div className="text-right">
                         <span className="text-sm font-bold text-slate-800 block">{formatDateTime(transfer.createdAt)}</span>
                         {/* ĐÃ THÊM: Người tạo */}
-                        <span className="text-[10px] text-slate-400 font-medium flex items-center justify-end gap-1 mt-0.5"><User className="w-3 h-3"/> {userMap.get(transfer.createdByUserId) || 'Hệ thống'}</span>
+                        <span className="text-[10px] text-slate-400 font-medium flex items-center justify-end gap-1 mt-0.5"><User className="w-3 h-3"/> {userMap.get(transfer.createdByUserId || '') || 'Hệ thống'}</span>
                       </div>
                     </div>
                     
@@ -189,7 +189,7 @@ export function TransferDetailsModal({ transferId, onClose }: Props) {
                              {formatDateTime(transfer.receivedAt)}
                            </span>
                            {/* ĐÃ THÊM: Người nhận */}
-                           <span className="text-[10px] text-slate-400 font-medium flex items-center justify-end gap-1 mt-1.5"><User className="w-3 h-3"/> {userMap.get(transfer.receivedByUserId) || 'Hệ thống'}</span>
+                           <span className="text-[10px] text-slate-400 font-medium flex items-center justify-end gap-1 mt-1.5"><User className="w-3 h-3"/> {userMap.get(transfer.receivedByUserId || '') || 'Hệ thống'}</span>
                         </div>
                       </div>
                     )}
@@ -306,7 +306,6 @@ export function TransferDetailsModal({ transferId, onClose }: Props) {
               transfer={transfer} 
               warehouses={warehouses || []} 
               products={products || []}
-              users={users || []}
             />
           </div>
 
