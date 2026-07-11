@@ -1,3 +1,4 @@
+
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -60,28 +61,34 @@ export function getRoleColor(role: string): string {
 }
 
 // ── Status helpers ────────────────────────────────────────────
+// ĐÃ SỬA: PACKING (1 trạng thái duy nhất, nhập nhằng) được tách thành
+// CONFIRMED + PACKED; thêm READY_FOR_PICKUP cho đơn BOPIS.
 export function getOrderStatusLabel(status: string): string {
   const map: Record<string, string> = {
-    PENDING:   'Chờ xử lý',
-    PACKING:   'Đang đóng gói',
-    SHIPPING:  'Đang giao',
-    DELIVERED: 'Đã giao',
-    CANCELLED: 'Đã hủy',
-    RETURNED:  'Hoàn trả',
     WAITING_FOR_CONSOLIDATION: 'Chờ gom hàng',
+    PENDING:           'Chờ xác nhận',
+    CONFIRMED:         'Đã xác nhận',
+    PACKED:            'Đã đóng gói',
+    SHIPPING:          'Đang giao',
+    READY_FOR_PICKUP:  'Sẵn sàng lấy hàng',
+    DELIVERED:         'Đã giao',
+    CANCELLED:         'Đã hủy',
+    RETURNED:          'Hoàn trả',
   };
   return map[status] ?? status;
 }
 
 export function getOrderStatusColor(status: string): string {
   const map: Record<string, string> = {
-    PENDING:   'bg-gray-100 text-gray-700',
-    PACKING:   'bg-yellow-100 text-yellow-700',
-    SHIPPING:  'bg-blue-100 text-blue-700',
-    DELIVERED: 'bg-green-100 text-green-700',
-    CANCELLED: 'bg-red-100 text-red-700',
-    RETURNED:  'bg-orange-100 text-orange-700',
     WAITING_FOR_CONSOLIDATION: 'bg-indigo-100 text-indigo-700 border border-indigo-200',
+    PENDING:          'bg-gray-100 text-gray-700',
+    CONFIRMED:        'bg-cyan-100 text-cyan-700',
+    PACKED:           'bg-yellow-100 text-yellow-700',
+    SHIPPING:         'bg-blue-100 text-blue-700',
+    READY_FOR_PICKUP: 'bg-purple-100 text-purple-700',
+    DELIVERED:        'bg-green-100 text-green-700',
+    CANCELLED:        'bg-red-100 text-red-700',
+    RETURNED:         'bg-orange-100 text-orange-700',
   };
   return map[status] ?? 'bg-gray-100 text-gray-700';
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, Package, Search, Filter, History, SlidersHorizontal, MapPin, FolderTree, Download, DollarSign, BellRing, X, Box, ChevronDown, Activity } from 'lucide-react';
+import { AlertTriangle, Package, Search, Filter, History, SlidersHorizontal, MapPin, FolderTree, Download, DollarSign, BellRing, X, Box, ChevronDown } from 'lucide-react';
 import { 
   PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer
 } from 'recharts';
@@ -20,7 +21,6 @@ import { PageLoader, EmptyState, Pagination, Spinner } from '../components/ui';
 import { InventoryHistoryModal } from './InventoryHistoryModal';
 import InventoryAdjustModal from './InventoryAdjustModal';
 import { InventoryQuickLookupModal } from './InventoryQuickLookupModal';
-import api from '../lib/axios';
 
 const STATUS_OPTIONS = [
   { value: 'ALL', label: 'Tất cả trạng thái' },
@@ -29,7 +29,6 @@ const STATUS_OPTIONS = [
   { value: 'OUT_OF_STOCK', label: 'Hết hàng (Tồn = 0)' },
 ];
 
-// --- CẤU HÌNH TOOLTIP & MÀU BIỂU ĐỒ ---
 const CHART_COLORS = ['#4f46e5', '#0d9488', '#e11d48', '#d97706', '#7c3aed', '#0284c7'];
 
 const CustomTooltip = ({ active, payload }: any) => {
@@ -73,8 +72,8 @@ function MinQuantityModal({ inventory, onClose, onSaved }: { inventory: any, onC
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Lỗi khi cập nhật định mức'),
   });
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 transition-all">
+  const modalContent = (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 transition-all">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm animate-scale-in border border-slate-100 overflow-hidden flex flex-col">
         <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-white/80 shrink-0">
           <div>
@@ -116,6 +115,8 @@ function MinQuantityModal({ inventory, onClose, onSaved }: { inventory: any, onC
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }
 
 // ── MAIN PAGE ──
@@ -139,12 +140,20 @@ export default function InventoryPage() {
 
   const qc = useQueryClient();
   const stompClientRef = useRef<Client | null>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
 
   const { data: warehouses } = useQuery({
     queryKey: ['warehouses-inv'],
     queryFn: () => warehouseService.getAll().then((r: any) => r.data.data),
     enabled: isAdmin(),
   });
+
+  // ĐÃ SỬA: Tự động chọn kho đầu tiên cho Admin nếu chưa chọn kho nào
+  useEffect(() => {
+    if (isAdmin() && warehouses && warehouses.length > 0 && !selectedWarehouseId) {
+      setSelectedWarehouseId(warehouses[0].id);
+    }
+  }, [warehouses, isAdmin, selectedWarehouseId]);
 
   const { data: categories } = useQuery({
     queryKey: ['categories-inv'],
@@ -154,14 +163,13 @@ export default function InventoryPage() {
   const { data: inventoryValueData } = useQuery({
     queryKey: ['inventory-value', selectedWarehouseId],
     queryFn: () => reportService.getInventoryValue(selectedWarehouseId).then((r: any) => r.data.data),
-    enabled: !!selectedWarehouseId || isAdmin(), // Sửa để Admin thấy data tổng
+    enabled: !!selectedWarehouseId || isAdmin(),
   });
 
   const safeInventoryValue = Array.isArray(inventoryValueData) ? inventoryValueData : [];
   const totalSystemQty = safeInventoryValue.reduce((sum, item) => sum + Number(item.total_qty ?? 0), 0);
   const totalSystemValue = safeInventoryValue.reduce((sum, item) => sum + Number(item.total_value ?? 0), 0);
 
-  // Tính toán dữ liệu Biểu đồ Tỷ trọng vốn
   const dashboardChartData = useMemo(() => {
     if (safeInventoryValue.length === 0) return [];
     return safeInventoryValue.map((w, i) => ({
@@ -171,13 +179,6 @@ export default function InventoryPage() {
       color: CHART_COLORS[i % CHART_COLORS.length]
     })).filter(d => d.value > 0);
   }, [safeInventoryValue]);
-
-  useEffect(() => {
-    if (isAdmin() && warehouses?.length > 0 && !selectedWarehouseId) {
-      // Để trống '' (Toàn hệ thống) mặc định cho Admin thay vì tự chọn kho 0
-      // setSelectedWarehouseId(warehouses[0].id); 
-    }
-  }, [warehouses, isAdmin, selectedWarehouseId]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -196,8 +197,8 @@ export default function InventoryPage() {
       page,
       size: PAGE_SIZE
     }).then(r => r.data.data),
-    // Sửa enable để Admin có thể xem toàn hệ thống (nếu BE support) hoặc yêu cầu chọn kho
-    enabled: isAdmin() ? true : !!selectedWarehouseId, 
+    // ĐÃ SỬA: Bắt buộc phải có selectedWarehouseId mới được gọi API
+    enabled: !!selectedWarehouseId, 
   });
 
   const { data: lowStockAlerts } = useQuery({
@@ -206,7 +207,6 @@ export default function InventoryPage() {
     enabled: isAdmin() ? true : !!selectedWarehouseId,
   });
 
-  // WebSocket
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
     if (!token || !selectedWarehouseId) return;
@@ -317,9 +317,8 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* ── MINI DASHBOARD (BỐ CỤC TỶ LỆ VÀNG) ── */}
+      {/* ── MINI DASHBOARD ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in">
-        {/* Card 1: Tổng quan số lượng */}
         <div className="lg:col-span-4 bg-white p-6 rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 flex flex-col justify-center relative overflow-hidden group">
           <div className="absolute -right-6 -top-6 w-24 h-24 bg-indigo-50 rounded-full blur-2xl group-hover:bg-indigo-100 transition-colors duration-700"></div>
           <div className="relative z-10 flex items-center gap-4 mb-4">
@@ -337,7 +336,6 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        {/* Card 2: Biểu đồ tỷ trọng (Theo kho hoặc Trạng thái) */}
         <div className="lg:col-span-8 bg-white p-6 rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 flex items-center gap-8">
           <div className="w-1/3 h-[120px] relative shrink-0">
             {dashboardChartData.length > 0 ? (
@@ -371,21 +369,28 @@ export default function InventoryPage() {
         </div>
       </div>
 
-      {/* ── CẢNH BÁO TỒN KHO ── */}
+      {/* ── CẢNH BÁO TỒN KHO (CLICKABLE) ── */}
       {(lowStockAlerts ?? []).length > 0 && (
-        <div className="bg-rose-50 border border-rose-100 rounded-3xl p-6 flex items-start sm:items-center gap-5 shadow-[0_4px_24px_rgb(0,0,0,0.02)] animate-fade-in">
+        <div 
+          onClick={() => {
+            setStatusFilter('LOW_STOCK');
+            setPage(0);
+            tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }}
+          className="bg-rose-50 border border-rose-100 rounded-3xl p-6 flex items-start sm:items-center gap-5 shadow-[0_4px_24px_rgb(0,0,0,0.02)] animate-fade-in cursor-pointer hover:bg-rose-100/80 transition-colors"
+        >
           <div className="p-3 bg-rose-200 text-rose-700 rounded-2xl shrink-0 shadow-sm">
             <AlertTriangle className="w-6 h-6 animate-pulse" />
           </div>
           <div>
             <p className="font-extrabold text-rose-800 text-lg tracking-tight mb-1">Hành động cần thiết: Có {lowStockAlerts!.length} sản phẩm sắp chạm đáy tồn kho!</p>
-            <p className="text-rose-600/90 font-medium text-sm">Vui lòng lọc theo trạng thái "Sắp hết hàng" bên dưới và lên kế hoạch nhập hàng để tránh gián đoạn kinh doanh.</p>
+            <p className="text-rose-600/90 font-medium text-sm">Nhấn vào đây để xem danh sách và lên kế hoạch nhập hàng tránh gián đoạn kinh doanh.</p>
           </div>
         </div>
       )}
 
       {/* ── KHU VỰC BẢNG DỮ LIỆU & BỘ LỌC ── */}
-      <div className="bg-white rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 overflow-hidden flex flex-col animate-fade-in">
+      <div ref={tableRef} className="bg-white rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 overflow-hidden flex flex-col animate-fade-in">
         
         {/* Toolbar */}
         <div className="p-5 border-b border-slate-100 flex flex-col lg:flex-row justify-between gap-4 bg-white">
@@ -434,7 +439,8 @@ export default function InventoryPage() {
                    value={selectedWarehouseId} 
                    onChange={(e) => { setSelectedWarehouseId(e.target.value); setPage(0); }}
                  >
-                   <option value="">-- Toàn hệ thống --</option>
+                   {/* ĐÃ SỬA: Không cho phép chọn rỗng */}
+                   <option value="" disabled>-- Chọn chi nhánh --</option>
                    {warehouses?.map((w: any) => <option key={w.id} value={w.id}>{w.name}</option>)}
                  </select>
                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
@@ -451,7 +457,8 @@ export default function InventoryPage() {
               <tr>
                 <th className="px-6 py-5">Sản phẩm</th>
                 <th className="px-6 py-5">Mã Barcode / SKU</th>
-                <th className="px-6 py-5 text-center">Tồn hệ thống</th>
+                {/* ĐÃ SỬA: Đổi tên cột */}
+                <th className="px-6 py-5 text-center" title="Tồn kho vật lý tại chi nhánh đang chọn">Tồn kho thực tế</th>
                 <th className="px-6 py-5 text-center text-amber-600" title="Hàng khách đã đặt Online nhưng chưa giao">Giữ chỗ</th>
                 <th className="px-6 py-5 text-center text-blue-600" title="Hàng đang trên đường chuyển kho">Đang về</th>
                 <th className="px-6 py-5 text-center text-emerald-700">Tồn khả dụng</th>

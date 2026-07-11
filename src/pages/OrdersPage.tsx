@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { 
   X, Package, Search, RefreshCw, Eye, MapPin, Store, Truck, Plus, 
-  CheckCircle, Filter, ShoppingBag, ArrowRight, ChevronDown, BarChart3
+  CheckCircle, Filter, ShoppingBag, ArrowRight, ChevronDown, BarChart3, Ban
 } from 'lucide-react';
 import { 
   PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer,
@@ -12,20 +12,22 @@ import {
 import { orderService } from '@/services/order.service';
 import { warehouseService } from '@/services/warehouse.service';
 import { useAuthStore } from '@/stores/auth.store';
-import { formatCurrency, formatDateTime, getOrderStatusColor, getOrderStatusLabel } from '@/lib/utils';
+import { formatCurrency, formatDateTime, getOrderStatusColor, getOrderStatusLabel, getErrorMessage } from '@/lib/utils';
 import { PageLoader, EmptyState, Pagination, Spinner } from '@/components/ui';
 import toast from 'react-hot-toast';
 import { CreateOrderModal } from './CreateOrderModal'; 
 
 const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: '', label: 'Tất cả trạng thái' },
-  { value: 'PENDING',   label: 'Chờ xử lý' },
-  { value: 'PACKING',   label: 'Đang đóng gói' },
-  { value: 'WAITING_FOR_CONSOLIDATION', label: 'Chờ gom hàng' }, // <-- ĐÃ THÊM MỚI Ở ĐÂY
-  { value: 'SHIPPING',  label: 'Đang giao' },
-  { value: 'DELIVERED', label: 'Đã giao' },
-  { value: 'CANCELLED', label: 'Đã hủy' },
-  { value: 'RETURNED',  label: 'Hoàn trả' },
+  { value: 'WAITING_FOR_CONSOLIDATION', label: 'Chờ gom hàng' },
+  { value: 'PENDING',          label: 'Chờ xác nhận' },
+  { value: 'CONFIRMED',        label: 'Đã xác nhận' },
+  { value: 'PACKED',           label: 'Đã đóng gói' },
+  { value: 'SHIPPING',         label: 'Đang giao' },
+  { value: 'READY_FOR_PICKUP', label: 'Sẵn sàng lấy hàng' },
+  { value: 'DELIVERED',        label: 'Đã giao' },
+  { value: 'CANCELLED',        label: 'Đã hủy' },
+  { value: 'RETURNED',         label: 'Hoàn trả' },
 ];
 
 const TYPE_OPTIONS: { value: string; label: string }[] = [
@@ -55,9 +57,36 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
+function getQuickAction(order: { status: string; type: string }, role: string) {
+  if (role === 'ROLE_MANAGER') {
+    if (order.status === 'PENDING') return { action: 'confirm', label: 'Xác nhận' };
+    if (order.status === 'CONFIRMED') return { action: 'pack', label: 'Đóng gói' };
+    if (order.status === 'PACKED' && order.type === 'DELIVERY') return { action: 'ship', label: 'Giao hàng', needsShippingInfo: true };
+    if (order.status === 'PACKED' && order.type === 'BOPIS') return { action: 'markReady', label: 'Sẵn sàng lấy' };
+    if (order.status === 'SHIPPING' || order.status === 'READY_FOR_PICKUP') return { action: 'complete', label: 'Hoàn tất' };
+    if (order.status === 'DELIVERED') return { action: 'return', label: 'Hoàn trả', destructive: true, needsReason: true };
+    return null;
+  }
+  if (role === 'ROLE_CASHIER') {
+    if (order.status === 'CONFIRMED') return { action: 'pack', label: 'Đóng gói' };
+    return null;
+  }
+  return null;
+}
+
+function canCancel(order: { status: string }, role: string) {
+  if (role === 'ROLE_CASHIER') return order.status === 'PENDING';
+  if (role === 'ROLE_MANAGER') {
+    return ['WAITING_FOR_CONSOLIDATION', 'PENDING', 'CONFIRMED', 'PACKED'].includes(order.status);
+  }
+  return false;
+}
+
 export default function OrdersPage() {
-  const { user, isAdmin, isManager } = useAuthStore();
-  
+  const { user, isAdmin, isManager, isCashier } = useAuthStore();
+  const role = user?.role ?? '';
+  const hideFinancial = isCashier(); 
+
   const [status, setStatus] = useState('');
   const [typeFilter, setTypeFilter] = useState(''); 
   const [warehouseId, setWarehouseId] = useState<string>('');
@@ -66,10 +95,12 @@ export default function OrdersPage() {
   const [page, setPage] = useState(0);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  // State Quản lý Modal Đánh chặn Shipping
   const [shippingOrder, setShippingOrder] = useState<any | null>(null);
   const [shippingProvider, setShippingProvider] = useState('');
   const [trackingCode, setTrackingCode] = useState('');
+
+  const [reasonModal, setReasonModal] = useState<{ order: any; action: 'cancel' | 'return' } | null>(null);
+  const [reasonText, setReasonText] = useState('');
 
   const qc = useQueryClient();
 
@@ -102,52 +133,64 @@ export default function OrdersPage() {
     }
   });
 
-  const updateMut = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: any }) =>
-      orderService.updateStatus(id, body),
-    onSuccess: async () => { 
-      toast.success('Cập nhật trạng thái thành công'); 
-      await qc.invalidateQueries({ queryKey: ['orders'] }); 
-      setShippingOrder(null); 
+  const actionMut = useMutation({
+    mutationFn: ({ id, action, payload }: { id: string; action: string; payload?: any }) => {
+      switch (action) {
+        case 'confirm':   return orderService.confirm(id, payload?.note);
+        case 'pack':      return orderService.pack(id, payload?.note);
+        case 'ship':      return orderService.ship(id, payload ?? {});
+        case 'markReady': return orderService.markReady(id, payload?.note);
+        case 'complete':  return orderService.complete(id, payload?.note);
+        case 'return':    return orderService.returnOrder(id, payload.reason);
+        case 'cancel':    return orderService.cancel(id, payload.reason);
+        default: return Promise.reject(new Error('Hành động không hợp lệ'));
+      }
     },
-    onError: (err: any) => toast.error(err?.response?.data?.message ?? 'Lỗi cập nhật'),
+    onSuccess: async () => { 
+      toast.success('Cập nhật đơn hàng thành công'); 
+      await qc.invalidateQueries({ queryKey: ['orders'] }); 
+      setShippingOrder(null);
+      setReasonModal(null);
+      setReasonText('');
+    },
+    onError: (err: any) => toast.error(getErrorMessage(err)),
   });
 
-  const nextStatus: Record<string, string> = {
-    PENDING: 'PACKING', 
-    PACKING: 'SHIPPING', 
-    SHIPPING: 'DELIVERED',
-    DELIVERED: 'RETURNED'
-  };
+  const handleQuickAction = (order: any) => {
+    const next = getQuickAction(order, role);
+    if (!next) return;
 
-  const handleQuickUpdate = (order: any) => {
-    const nextStatusStr = nextStatus[order.status];
-    
-    if (order.status === 'PACKING' && order.type === 'DELIVERY') {
+    if (next.needsShippingInfo) {
       setShippingProvider('');
       setTrackingCode('');
-      setShippingOrder(order); 
+      setShippingOrder(order);
       return;
     }
-    
-    updateMut.mutate({ id: order.id, body: { status: nextStatusStr } });
+    if (next.needsReason) {
+      setReasonText('');
+      setReasonModal({ order, action: next.action as 'return' });
+      return;
+    }
+    actionMut.mutate({ id: order.id, action: next.action });
   };
 
   const handleConfirmShippingModal = () => {
     if (!shippingOrder) return;
-    updateMut.mutate({ 
-      id: shippingOrder.id, 
-      body: { 
-        status: 'SHIPPING', 
-        shippingProvider, 
-        trackingCode 
-      } 
-    });
+    actionMut.mutate({ id: shippingOrder.id, action: 'ship', payload: { shippingProvider, trackingCode } });
+  };
+
+  const handleCancelClick = (order: any) => {
+    setReasonText('');
+    setReasonModal({ order, action: 'cancel' });
+  };
+
+  const handleConfirmReasonModal = () => {
+    if (!reasonModal || !reasonText.trim()) return;
+    actionMut.mutate({ id: reasonModal.order.id, action: reasonModal.action, payload: { reason: reasonText.trim() } });
   };
 
   const displayList = pagedData?.content ?? [];
 
-  // --- TÍNH TOÁN DATA CHO MINI DASHBOARD ---
   const dashboardStats = useMemo(() => {
     let delivery = 0, bopis = 0;
     const statusMap: Record<string, { count: number, color: string }> = {};
@@ -158,12 +201,15 @@ export default function OrdersPage() {
 
       const statusLabel = getOrderStatusLabel(o.status);
       if (!statusMap[statusLabel]) {
-        let color = '#94a3b8'; // default
+        let color = '#94a3b8'; 
         if (o.status === 'PENDING') color = '#f59e0b';
-        if (o.status === 'PACKING') color = '#3b82f6';
+        if (o.status === 'CONFIRMED') color = '#06b6d4';
+        if (o.status === 'PACKED') color = '#3b82f6';
         if (o.status === 'SHIPPING') color = '#8b5cf6';
+        if (o.status === 'READY_FOR_PICKUP') color = '#a855f7';
         if (o.status === 'DELIVERED') color = '#10b981';
         if (o.status === 'CANCELLED') color = '#f43f5e';
+        if (o.status === 'RETURNED') color = '#f97316'; // ĐÃ THÊM MÀU CHO RETURNED
 
         statusMap[statusLabel] = { count: 0, color };
       }
@@ -190,8 +236,14 @@ export default function OrdersPage() {
       {/* ── HEADER ── */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Quản lý Đơn hàng</h1>
-          <p className="text-sm text-slate-500 mt-1.5 font-medium">Theo dõi, xử lý và tạo mới các đơn hàng đa kênh.</p>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">
+            {isCashier() ? 'Đơn hàng cần xử lý' : 'Quản lý Đơn hàng'}
+          </h1>
+          <p className="text-sm text-slate-500 mt-1.5 font-medium">
+            {isCashier()
+              ? 'Đóng gói các đơn đã được Quản lý xác nhận.'
+              : 'Theo dõi, xử lý và tạo mới các đơn hàng đa kênh.'}
+          </p>
         </div>
         {(isAdmin() || isManager()) && (
           <button 
@@ -203,9 +255,8 @@ export default function OrdersPage() {
         )}
       </div>
 
-      {/* ── MINI DASHBOARD (BỐ CỤC TỶ LỆ VÀNG) ── */}
+      {/* ── MINI DASHBOARD ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Card 1: Tổng số đơn */}
         <div className="lg:col-span-3 bg-white p-6 rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 flex flex-col justify-center relative overflow-hidden group">
           <div className="absolute -right-6 -top-6 w-24 h-24 bg-indigo-50 rounded-full blur-2xl group-hover:bg-indigo-100 transition-colors duration-700"></div>
           <div className="relative z-10 flex items-center gap-4 mb-4">
@@ -222,7 +273,6 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        {/* Card 2: Kênh giao hàng */}
         <div className="lg:col-span-5 bg-white p-6 rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 flex items-center gap-6">
           <div className="w-1/2 h-[120px] relative">
             {dashboardStats.typeData.length > 0 ? (
@@ -252,7 +302,6 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        {/* Card 3: Phân bổ trạng thái */}
         <div className="lg:col-span-4 bg-white p-6 rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 flex flex-col justify-center">
           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-4">Trạng thái xử lý (Trang này)</p>
           <div className="h-[90px] w-full">
@@ -275,7 +324,6 @@ export default function OrdersPage() {
       {/* ── TOOLBAR & DATA TABLE ── */}
       <div className="bg-white rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 overflow-hidden flex flex-col">
         
-        {/* Toolbar */}
         <div className="p-5 border-b border-slate-100 flex flex-col lg:flex-row justify-between gap-4 bg-white">
           <div className="flex flex-col sm:flex-row gap-4 w-full">
             
@@ -340,7 +388,6 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        {/* Data Table */}
         <div className="overflow-x-auto relative min-h-[400px]">
           {isLoading && <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-10 flex items-center justify-center"><Spinner size="lg" className="text-indigo-600" /></div>}
           <table className="w-full text-left text-sm text-slate-600">
@@ -349,17 +396,17 @@ export default function OrdersPage() {
                 <th className="px-6 py-5">Mã đơn & Kênh</th>
                 <th className="px-6 py-5">Khách hàng</th>
                 <th className="px-6 py-5">Kho xử lý</th>
-                <th className="px-6 py-5 text-right">Tổng tiền</th>
-                <th className="px-6 py-5 text-center">Thanh toán</th>
+                {!hideFinancial && <th className="px-6 py-5 text-right">Tổng tiền</th>}
+                {!hideFinancial && <th className="px-6 py-5 text-center">Thanh toán</th>}
                 <th className="px-6 py-5 text-center">Trạng thái</th>
                 <th className="px-6 py-5">Ngày tạo</th>
-                <th className="px-6 py-5 text-right w-40">Thao tác</th>
+                <th className="px-6 py-5 text-right w-48">Thao tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50/80">
               {displayList.length === 0 && !isLoading ? (
                 <tr>
-                  <td colSpan={8} className="py-24">
+                  <td colSpan={hideFinancial ? 6 : 8} className="py-24">
                     <EmptyState 
                       icon={ShoppingBag} 
                       title="Chưa có đơn hàng nào" 
@@ -368,7 +415,11 @@ export default function OrdersPage() {
                   </td>
                 </tr>
               ) : (
-                displayList.map((order: any) => (
+                displayList.map((order: any) => {
+                  const quickAction = getQuickAction(order, role);
+                  const showCancel = canCancel(order, role);
+                  const isBusy = actionMut.isPending && actionMut.variables?.id === order.id;
+                  return (
                   <tr key={order.id} className="hover:bg-slate-50/80 transition-colors group cursor-pointer" onClick={() => document.getElementById(`link-${order.id}`)?.click()}>
                     <td className="px-6 py-4">
                       <Link id={`link-${order.id}`} to={`/orders/${order.id}`} className="font-mono text-[14px] font-bold text-slate-800 group-hover:text-indigo-600 transition-colors block mb-1">
@@ -398,27 +449,33 @@ export default function OrdersPage() {
                       )}
                     </td>
                     
-                    <td className="px-6 py-4 text-right">
-                      <div className="font-black text-slate-900 text-base">
-                        {formatCurrency(order.finalAmount)}
-                      </div>
-                    </td>
+                    {!hideFinancial && (
+                      <td className="px-6 py-4 text-right">
+                        <div className="font-black text-slate-900 text-base">
+                          {formatCurrency(order.finalAmount)}
+                        </div>
+                      </td>
+                    )}
+                    
+                    {!hideFinancial && (
+                      <td className="px-6 py-4 text-center">
+                        <div className="flex flex-col items-center gap-1.5">
+                          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{order.paymentMethod}</span>
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border shadow-sm ${
+                            order.paymentStatus === 'PAID' 
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-100/60' 
+                              : order.paymentStatus === 'REFUNDED'
+                              ? 'bg-slate-100 text-slate-600 border-slate-200'
+                              : 'bg-amber-50 text-amber-700 border-amber-100/60'
+                          }`}>
+                            {order.paymentStatus === 'PAID' ? 'Đã thanh toán' : order.paymentStatus === 'REFUNDED' ? 'Đã hoàn tiền' : 'Chưa TT'}
+                          </span>
+                        </div>
+                      </td>
+                    )}
                     
                     <td className="px-6 py-4 text-center">
-                      <div className="flex flex-col items-center gap-1.5">
-                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{order.paymentMethod}</span>
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${
-                          order.paymentStatus === 'PAID' 
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-100/60' 
-                            : 'bg-amber-50 text-amber-700 border-amber-100/60'
-                        }`}>
-                          {order.paymentStatus === 'PAID' ? 'Đã thanh toán' : 'Chưa TT'}
-                        </span>
-                      </div>
-                    </td>
-                    
-                    <td className="px-6 py-4 text-center">
-                      <span className={`inline-flex items-center justify-center px-2.5 py-1 text-[10px] font-bold rounded-md border uppercase tracking-wider ${getOrderStatusColor(order.status).replace('text-', 'text-').replace('bg-', 'bg-').replace('border-', 'border-')}`}>
+                      <span className={`inline-flex items-center justify-center px-2.5 py-1 text-[10px] font-bold rounded-md border uppercase tracking-wider ${getOrderStatusColor(order.status)}`}>
                         {getOrderStatusLabel(order.status)}
                       </span>
                       {order.paymentMethod === 'COD' && order.codReconciled && (
@@ -437,24 +494,33 @@ export default function OrdersPage() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         
-                        {nextStatus[order.status] && order.status !== 'WAITING_FOR_CONSOLIDATION' && (
+                        {quickAction && (
                           <button 
-                            onClick={(e) => { e.stopPropagation(); handleQuickUpdate(order); }} 
-                            disabled={(updateMut.isPending && updateMut.variables?.id === order.id) || isRefetching}
+                            onClick={(e) => { e.stopPropagation(); handleQuickAction(order); }} 
+                            disabled={isBusy || isRefetching}
                             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center justify-center shadow-sm disabled:opacity-50
-                              ${order.status === 'DELIVERED' 
+                              ${quickAction.destructive
                                 ? 'bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-100/50' 
                                 : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-100/50'
                               }`}
                             title="Xử lý bước tiếp theo"
                           >
-                            {(updateMut.isPending && updateMut.variables?.id === order.id)
-                              ? <Spinner size="sm" className={order.status === 'DELIVERED' ? "text-rose-600" : "text-indigo-600"} /> 
-                              : nextStatus[order.status] === 'PACKING' ? 'Gói' : 
-                                nextStatus[order.status] === 'SHIPPING' ? 'Giao' : 
-                                nextStatus[order.status] === 'RETURNED' ? 'Hoàn trả' : 'Hoàn tất'
+                            {isBusy
+                              ? <Spinner size="sm" className={quickAction.destructive ? "text-rose-600" : "text-indigo-600"} /> 
+                              : quickAction.label
                             }
-                            {!(updateMut.isPending && updateMut.variables?.id === order.id) && <ArrowRight className="w-3 h-3 ml-1" />}
+                            {!isBusy && <ArrowRight className="w-3 h-3 ml-1" />}
+                          </button>
+                        )}
+
+                        {showCancel && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleCancelClick(order); }}
+                            disabled={isBusy || isRefetching}
+                            className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors disabled:opacity-50"
+                            title="Hủy đơn"
+                          >
+                            <Ban className="w-4 h-4" />
                           </button>
                         )}
 
@@ -468,13 +534,13 @@ export default function OrdersPage() {
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
         
-        {/* Pagination */}
         {pagedData && pagedData.totalPages > 1 && (
           <div className="p-4 border-t border-slate-100 bg-slate-50/50">
             <Pagination page={page} totalPages={pagedData.totalPages} totalElements={pagedData.totalElements} size={20} onPageChange={setPage} />
@@ -540,10 +606,53 @@ export default function OrdersPage() {
               </button>
               <button 
                 onClick={handleConfirmShippingModal} 
-                disabled={updateMut.isPending || !shippingProvider} 
+                disabled={actionMut.isPending || !shippingProvider} 
                 className="flex items-center justify-center min-w-[160px] px-6 py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-[0_4px_12px_rgb(99,102,241,0.3)] hover:bg-indigo-700 disabled:opacity-50 disabled:shadow-none transition-all"
               >
-                {updateMut.isPending ? <Spinner size="sm" className="text-white"/> : 'Xác nhận Giao hàng'}
+                {actionMut.isPending ? <Spinner size="sm" className="text-white"/> : 'Xác nhận Giao hàng'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL NHẬP LÝ DO (HỦY ĐƠN / HOÀN TRẢ) ── */}
+      {reasonModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 transition-all">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md animate-scale-in border border-slate-100 overflow-hidden flex flex-col">
+            <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <div>
+                <h3 className="font-bold text-lg text-slate-900">
+                  {reasonModal.action === 'cancel' ? 'Hủy đơn hàng' : 'Hoàn trả đơn hàng'}
+                </h3>
+                <p className="text-xs text-slate-500 font-medium mt-0.5">
+                  Đơn hàng: <span className="font-mono text-indigo-600 font-bold">{reasonModal.order.code}</span>
+                </p>
+              </div>
+              <button onClick={() => setReasonModal(null)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-all">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-8 space-y-4 bg-slate-50/30">
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Lý do (bắt buộc) *</label>
+              <textarea
+                className="w-full px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all shadow-sm min-h-[100px]"
+                placeholder="Nhập lý do..."
+                value={reasonText}
+                onChange={e => setReasonText(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="p-6 border-t border-slate-100 flex gap-4 justify-end bg-white shrink-0">
+              <button onClick={() => setReasonModal(null)} className="px-6 py-3 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">
+                Đóng
+              </button>
+              <button
+                onClick={handleConfirmReasonModal}
+                disabled={actionMut.isPending || !reasonText.trim()}
+                className="flex items-center justify-center min-w-[140px] px-6 py-3 bg-rose-600 text-white rounded-xl text-sm font-bold shadow-[0_4px_12px_rgb(225,29,72,0.3)] hover:bg-rose-700 disabled:opacity-50 disabled:shadow-none transition-all"
+              >
+                {actionMut.isPending ? <Spinner size="sm" className="text-white"/> : 'Xác nhận'}
               </button>
             </div>
           </div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Handshake, Search, Plus, X, Edit, Eye, EyeOff, Info, CreditCard, Download, Upload, Package, Building2, Phone, Mail, Landmark, FileText, CheckCircle } from 'lucide-react';
+import { Handshake, Search, Plus, X, Edit, Eye, EyeOff, Info, CreditCard, Download, Upload, Package, Building2, Phone, Mail, Landmark, FileText, CheckCircle, Clock } from 'lucide-react';
 import { 
   PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer 
 } from 'recharts';
@@ -13,6 +13,7 @@ import * as XLSX from 'xlsx';
 import { supplierService } from '@/services/supplier.service';
 import { financeService } from '@/services/finance.service';
 import { purchaseService } from '@/services/purchase.service';
+import { useAuthStore } from '@/stores/auth.store'; // [BƯỚC 3 & 4] Import AuthStore
 import { PageLoader, EmptyState, Spinner, Pagination } from '@/components/ui';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import toast from 'react-hot-toast';
@@ -79,9 +80,14 @@ function SupplierDetailsModal({ supplier, onClose }: { supplier: Supplier; onClo
   const [isPoDetailsOpen, setIsPoDetailsOpen] = useState(false);
   const [selectedPoId, setSelectedPoId] = useState<string | null>(null);
 
+  // [BƯỚC 3] Lấy thông tin kho của User hiện tại
+  const { warehouseId: storeWarehouseId, isAdmin } = useAuthStore();
+  const wid = isAdmin() ? '' : (supplier.id ? storeWarehouseId() || '' : '');
+
+  // [BƯỚC 3] Gọi API lấy tổng nợ có kèm warehouseId (wid)
   const { data: totalUnpaid = 0, isLoading: loadingTotal } = useQuery({
-    queryKey: ['supplier-total-debt', supplier.id],
-    queryFn: () => financeService.getTotalOutstandingBySupplier(supplier.id).then(r => r.data.data),
+    queryKey: ['supplier-total-debt', supplier.id, wid],
+    queryFn: () => financeService.getTotalOutstandingBySupplier(supplier.id, wid).then(r => r.data.data),
   });
 
   const { data: poData, isLoading: loadingPo } = useQuery({
@@ -234,6 +240,38 @@ function SupplierDetailsModal({ supplier, onClose }: { supplier: Supplier; onClo
                     </div>
                   </div>
                 </div>
+
+                {/* [BƯỚC 2] THẺ THÔNG TIN HỆ THỐNG */}
+                <div className="bg-slate-50/80 p-6 rounded-3xl border border-slate-200">
+                  <h4 className="font-bold text-slate-800 border-b border-slate-200/80 pb-4 mb-5 flex items-center gap-2.5">
+                    <div className="p-1.5 bg-slate-200 text-slate-600 rounded-lg"><Clock className="w-4 h-4" /></div>
+                    Thông tin hệ thống
+                  </h4>
+                  <div className="space-y-4 text-[13px]">
+                    <div className="flex justify-between items-center border-b border-slate-200/60 pb-3">
+                      <span className="font-semibold text-slate-500">Người tạo:</span>
+                      <span className="font-bold text-slate-800">{supplier.createdBy || 'Hệ thống'}</span>
+                    </div>
+                    <div className="flex justify-between items-center border-b border-slate-200/60 pb-3">
+                      <span className="font-semibold text-slate-500">Ngày tạo:</span>
+                      <span className="font-medium text-slate-800">{formatDateTime(supplier.createdAt)}</span>
+                    </div>
+                    
+                    {supplier.updatedAt && (
+                      <>
+                        <div className="flex justify-between items-center border-b border-slate-200/60 pb-3 pt-1">
+                          <span className="font-semibold text-slate-500">Người cập nhật:</span>
+                          <span className="font-bold text-indigo-600">{supplier.updatedBy || 'Hệ thống'}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="font-semibold text-slate-500">Cập nhật lúc:</span>
+                          <span className="font-medium text-slate-800">{formatDateTime(supplier.updatedAt)}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+
               </div>
 
               {/* Cột phải: Công nợ & Lịch sử nợ */}
@@ -635,6 +673,9 @@ export default function SuppliersPage() {
   const [editingId, setEditingId] = useState<string | undefined>();
   const [viewing, setViewing] = useState<Supplier | undefined>();
 
+  // [BƯỚC 4] Lấy useAuthStore để kiểm tra role Admin
+  const { isAdmin } = useAuthStore();
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedKeyword(keyword);
@@ -969,15 +1010,19 @@ export default function SuppliersPage() {
                         >
                           <Edit className="w-4 h-4" />
                         </button>
-                        <button 
-                          onClick={() => toggleMut.mutate(s)} 
-                          className={`p-1.5 rounded-lg flex items-center justify-center transition-colors ${
-                            s.isActive ? 'text-rose-500 hover:bg-rose-50' : 'text-emerald-600 hover:bg-emerald-50'
-                          }`} 
-                          title={s.isActive ? 'Khóa (Ngừng hoạt động)' : 'Mở khóa (Kích hoạt)'}
-                        >
-                          {s.isActive ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
+                        
+                        {/* [BƯỚC 4] CHỈ ADMIN MỚI THẤY NÚT KHÓA/MỞ KHÓA */}
+                        {isAdmin() && (
+                          <button 
+                            onClick={() => toggleMut.mutate(s)} 
+                            className={`p-1.5 rounded-lg flex items-center justify-center transition-colors ${
+                              s.isActive ? 'text-rose-500 hover:bg-rose-50' : 'text-emerald-600 hover:bg-emerald-50'
+                            }`} 
+                            title={s.isActive ? 'Khóa (Ngừng hoạt động)' : 'Mở khóa (Kích hoạt)'}
+                          >
+                            {s.isActive ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

@@ -10,9 +10,8 @@ import { formatCurrency, formatDateTime, getPurchaseStatusColor } from '@/lib/ut
 import { Spinner } from '@/components/ui';
 import { PurchaseOrderPrintTemplate } from './PurchaseOrderPrintTemplate';
 
-// Tiện ích map tiếng Việt cho trạng thái
+// ĐÃ SỬA: Bỏ DRAFT
 const STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Nháp',
   PENDING: 'Chờ duyệt',
   COMPLETED: 'Đã nhập kho',
   CANCELLED: 'Đã hủy'
@@ -232,7 +231,15 @@ export function PurchaseOrderDetailsModal({ purchaseOrderId, onClose }: Props) {
 
                 {/* Footer Tổng kết */}
                 <div className="bg-slate-50/50 border-t border-slate-100 p-6 md:p-8 flex justify-between items-center shrink-0">
-                  <span className="font-bold text-slate-500 uppercase tracking-wider text-[11px]">Tổng cộng thanh toán</span>
+                  <div className="flex flex-col">
+                    <span className="font-bold text-slate-500 uppercase tracking-wider text-[11px] mb-1">Tổng cộng thanh toán</span>
+                    {/* ĐÃ THÊM: Hiển thị trạng thái công nợ */}
+                    {po.status === 'COMPLETED' && (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-100 w-max">
+                        <CheckCircle className="w-3.5 h-3.5" /> Đã ghi nhận công nợ
+                      </span>
+                    )}
+                  </div>
                   <span className="text-3xl md:text-4xl font-black text-indigo-600 tracking-tight leading-none drop-shadow-sm">
                     {formatCurrency(po.totalAmount)}
                   </span>

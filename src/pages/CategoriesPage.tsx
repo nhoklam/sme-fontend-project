@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom'; // <-- ĐÃ THÊM IMPORT NÀY
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Edit, FolderTree, Eye, EyeOff, CornerDownRight, X, Save, Search, Activity } from 'lucide-react';
 import { 
@@ -68,8 +69,26 @@ function CategoryForm({ category, onClose, onSaved, categories }: {
     onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Đã xảy ra lỗi hệ thống'),
   });
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 transition-all">
+  // [FIX 1] CHỐNG VÒNG LẶP VÔ HẠN (CIRCULAR DEPENDENCY)
+  // Tìm tất cả ID của con, cháu, chắt... của danh mục đang sửa
+  const getDescendantIds = (catId: string): string[] => {
+    const children = categories.filter(c => c.parentId === catId);
+    let ids = children.map(c => c.id);
+    children.forEach(c => {
+      ids = [...ids, ...getDescendantIds(c.id)];
+    });
+    return ids;
+  };
+
+  // Danh sách các ID không được phép chọn làm cha (Gồm chính nó và tất cả con cháu của nó)
+  const invalidParentIds = useMemo(() => {
+    if (!isEdit || !category) return [];
+    return [category.id, ...getDescendantIds(category.id)];
+  }, [isEdit, category, categories]);
+
+  // [FIX 2] Đưa nội dung Modal vào biến modalContent để dùng với createPortal
+  const modalContent = (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 transition-all">
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg animate-scale-in border border-slate-100 overflow-hidden flex flex-col max-h-[90vh]">
         <div className="px-8 py-6 border-b border-slate-100 flex items-center justify-between bg-white/80 shrink-0">
           <div>
@@ -102,7 +121,8 @@ function CategoryForm({ category, onClose, onSaved, categories }: {
                 onChange={e => setForm({ ...form, parentId: e.target.value })}
               >
                 <option value="">-- Không có (Gốc) --</option>
-                {categories.filter(c => c.id !== category?.id).map(c => (
+                {/* [FIX 1] Lọc bỏ các danh mục không hợp lệ để tránh vòng lặp vô hạn */}
+                {categories.filter(c => !invalidParentIds.includes(c.id)).map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
@@ -157,6 +177,9 @@ function CategoryForm({ category, onClose, onSaved, categories }: {
       </div>
     </div>
   );
+
+  // [FIX 2] Render Modal ra ngoài body để che phủ toàn màn hình
+  return createPortal(modalContent, document.body);
 }
 
 // 3. TRANG CHÍNH QUẢN LÝ DANH MỤC

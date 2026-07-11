@@ -20,10 +20,13 @@ export const customerService = {
   getTopSpenders: (params?: { page?: number; size?: number }) =>
     api.get<ApiResponse<PageResponse<Customer>>>('/customers/top', { params }),
   
+  // ĐÃ SỬA: Cập nhật type trả về để nhận totalPages và totalElements
   getHistory: (id: string, params?: { page?: number; size?: number }) =>
-    api.get<ApiResponse<{ invoices: any[]; orders: any[] }>>(`/customers/${id}/history`, { params }),
+    api.get<ApiResponse<{ 
+      invoices: any[]; invoicesTotalPages: number; invoicesTotalElements: number;
+      orders: any[]; ordersTotalPages: number; ordersTotalElements: number;
+    }>>(`/customers/${id}/history`, { params }),
 
-  // === THÊM HÀM IMPORT BULK ===
   importBulk: (data: any[]) =>
     api.post<ApiResponse<any>>('/customers/bulk', data),
 };

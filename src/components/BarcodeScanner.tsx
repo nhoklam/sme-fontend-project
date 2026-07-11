@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import { X, Camera, AlertTriangle, Loader2, ScanLine } from 'lucide-react';

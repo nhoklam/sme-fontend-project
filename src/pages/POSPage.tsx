@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -18,6 +19,7 @@ import { Spinner } from '@/components/ui';
 import { POSPrintTemplate } from './POSPrintTemplate';
 import BarcodeScanner from '@/components/BarcodeScanner';
 import CustomerSelectModal from '@/components/CustomerSelectModal';
+import PromotionCodeInput from '@/components/pos/PromotionCodeInput'; // [Step 6] Nhập mã khuyến mãi
 
 import type { CartItem, InvoiceResponse } from '@/types';
 
@@ -28,6 +30,7 @@ export default function POSPage() {
   const {
     currentShift, setCurrentShift,
     items, customer, pointsToUse,
+    promotionCode, // [Step 6] Mã khuyến mãi đã áp dụng
     addItem, updateQuantity, removeItem, updateUnitPrice,
     setCustomer, setPointsToUse,
     clearCart,
@@ -141,6 +144,7 @@ export default function POSPage() {
         items: items.map(i => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice })),
         payments: paymentPayload,
         pointsToUse: pointsToUse || undefined, 
+        promotionCode: promotionCode || undefined, // [Step 6] Gửi mã KM đã validate để Backend apply + tăng usedCount
       }).then(r => r.data.data);
     },
     onSuccess: (invoice) => {
@@ -478,6 +482,12 @@ export default function POSPage() {
                 <ChevronRight className="w-5 h-5 opacity-50"/>
               </button>
             )}
+          </div>
+
+          {/* [NEW - Step 6] MÃ KHUYẾN MÃI */}
+          <div>
+            <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Mã khuyến mãi</h3>
+            <PromotionCodeInput orderTotal={totalAmount()} disabled={!currentShift || items.length === 0} />
           </div>
 
           {/* TÓM TẮT TIỀN */}

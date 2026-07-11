@@ -1,11 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom'; // <-- ĐÃ THÊM IMPORT NÀY
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { X, Plus, Trash2, ShoppingBag, MapPin, CreditCard, User, Lightbulb, CheckCircle2, AlertCircle, Building2 } from 'lucide-react'; 
+import { X, Plus, Trash2, ShoppingBag, MapPin, CreditCard, User, Lightbulb, CheckCircle2, AlertCircle, Building2, Tag, Gift, Truck } from 'lucide-react'; 
 import AsyncSelect from 'react-select/async'; 
 import { orderService } from '@/services/order.service';
 import { customerService } from '@/services/customer.service';
 import { productService } from '@/services/product.service';
 import { inventoryService } from '@/services/inventory.service';
+import { promotionService } from '@/services/promotion.service';
 import { formatCurrency } from '@/lib/utils';
 import { Spinner } from '@/components/ui';
 import toast from 'react-hot-toast';
@@ -34,25 +36,24 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
   });
 
   const [items, setItems] = useState<Array<{ productId: string; quantity: number; unitPrice: number; productName: string }>>([]);
-  const [currentCustomer, setCurrentCustomer] = useState<{value: string, label: string} | null>(null);
+  const [currentCustomer, setCurrentCustomer] = useState<{value: string, label: string, original: any} | null>(null);
+
+  // [FIX 4, 5] Thêm state cho Phí ship, Khuyến mãi, Điểm
+  const [shippingFee, setShippingFee] = useState<number>(0);
+  const [promotionCode, setPromotionCode] = useState('');
+  const [promotionDiscount, setPromotionDiscount] = useState(0);
+  const [pointsToUse, setPointsToUse] = useState(0);
 
   // CONSOLIDATION PLAN STATE
   const [consolidationPlans, setConsolidationPlans] = useState<any[]>([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
 
-  // ĐÃ SỬA: GỌI API TỐI ƯU HƠN, KHÔNG GỌI KHI DÒNG TRỐNG
   useEffect(() => {
     const fetchSuggestions = async () => {
-      // 1. Lọc ra những item ĐÃ CHỌN SẢN PHẨM và CÓ SỐ LƯỢNG
       const validItems = items.filter(i => i.productId && i.quantity > 0);
-
-      // 2. Chặn gọi API nếu: Không phải admin, chưa chọn tỉnh, giỏ hàng trống, 
-      // HOẶC đang có dòng trống chưa chọn SP (validItems.length !== items.length)
-      if (!isAdmin() || !form.provinceCode || validItems.length === 0 || validItems.length !== items.length) {
-        if (validItems.length === 0) {
-          setConsolidationPlans([]); // Chỉ clear list khi xóa hết giỏ hàng
-        }
+      if (!form.provinceCode || validItems.length === 0 || validItems.length !== items.length) {
+        if (validItems.length === 0) setConsolidationPlans([]);
         setSuggestError(null);
         return;
       }
@@ -68,7 +69,6 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
         const response = await orderService.suggestBranch(payload);
         setConsolidationPlans(response.data?.data || []);
       } catch (error: any) { 
-        console.error(error); 
         setConsolidationPlans([]);
         if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
            setSuggestError('Máy chủ xử lý quá lâu. Có thể do đơn hàng quá lớn.');
@@ -82,7 +82,7 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
     
     const timeoutId = setTimeout(() => fetchSuggestions(), 800);
     return () => clearTimeout(timeoutId);
-  }, [form.provinceCode, items, isAdmin]);
+  }, [form.provinceCode, items]);
 
   const loadCustomerOptions = async (inputValue: string) => {
     try {
@@ -92,13 +92,36 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
     } catch { return []; }
   };
 
+  // [FIX 6] Hàm đoán mã tỉnh từ địa chỉ
+  const guessProvinceCode = (address: string) => {
+    if (!address) return '';
+    const lower = address.toLowerCase();
+    if (lower.includes('hà nội') || lower.includes('ha noi')) return '01';
+    if (lower.includes('hồ chí minh') || lower.includes('ho chi minh') || lower.includes('hcm') || lower.includes('sài gòn')) return '79';
+    if (lower.includes('đà nẵng') || lower.includes('da nang')) return '48';
+    if (lower.includes('hải phòng') || lower.includes('hai phong')) return '31';
+    if (lower.includes('cần thơ') || lower.includes('can tho')) return '92';
+    if (lower.includes('lào cai') || lower.includes('lao cai')) return '10';
+    return '';
+  };
+
   const handleCustomerChange = (selected: any) => {
     setCurrentCustomer(selected);
     if (selected?.original) {
       const cust = selected.original;
-      setForm(prev => ({ ...prev, customerId: cust.id, shippingName: cust.fullName, shippingPhone: cust.phoneNumber, shippingAddress: cust.address }));
+      const guessedProvince = guessProvinceCode(cust.address);
+      setForm(prev => ({ 
+        ...prev, 
+        customerId: cust.id, 
+        shippingName: cust.fullName, 
+        shippingPhone: cust.phoneNumber, 
+        shippingAddress: cust.address,
+        provinceCode: guessedProvince || prev.provinceCode // Tự động điền tỉnh
+      }));
+      setPointsToUse(0);
     } else {
       setForm(prev => ({ ...prev, customerId: '', shippingName: '', shippingPhone: '', shippingAddress: '' }));
+      setPointsToUse(0);
     }
   };
 
@@ -115,7 +138,6 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
 
   const availableProducts = useMemo(() => {
     if (!productsData || !Array.isArray(productsData)) return [];
-    
     if (!isAdmin() && managerInventory && Array.isArray(managerInventory)) {
       return productsData
         .map((p: any) => {
@@ -124,11 +146,33 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
         })
         .filter((p: any) => p.displayQuantity > 0);
     }
-    
     return productsData
       .map((p: any) => ({ ...p, displayQuantity: p.availableQuantity || 0 }))
       .filter((p: any) => p.displayQuantity > 0);
   }, [productsData, managerInventory, isAdmin]);
+
+  const totalAmount = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+  const loyaltyDiscount = pointsToUse * 100; // 100đ/điểm
+  const finalAmount = Math.max(0, totalAmount + shippingFee - promotionDiscount - loyaltyDiscount);
+
+  // [FIX 5] Validate Promotion Code
+  const validatePromoMut = useMutation({
+    mutationFn: (code: string) => promotionService.validateCode({ code, orderTotal: totalAmount, channel: 'ONLINE' }).then(r => r.data.data),
+    onSuccess: (res) => {
+      setPromotionDiscount(res.discountAmount || 0);
+      toast.success(`Áp dụng mã ${res.code} thành công!`);
+    },
+    onError: (e: any) => {
+      setPromotionDiscount(0);
+      setPromotionCode('');
+      toast.error(e?.response?.data?.message || 'Mã không hợp lệ');
+    }
+  });
+
+  const handleApplyPromo = () => {
+    if (!promotionCode.trim()) return;
+    validatePromoMut.mutate(promotionCode.trim());
+  };
 
   const createMut = useMutation({
     mutationFn: () => {
@@ -143,6 +187,9 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
         note: form.note,
         assignedWarehouseId: form.assignedWarehouseId, 
         items: items.map(i => ({ productId: i.productId, quantity: i.quantity })),
+        shippingFee: shippingFee,
+        promotionCode: promotionDiscount > 0 ? promotionCode : undefined,
+        pointsToUse: pointsToUse > 0 ? pointsToUse : undefined,
       };
       return orderService.create(payload);
     },
@@ -164,10 +211,7 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
     for (const [productId, totalQty] of Object.entries(totalRequested)) {
       const product = availableProducts.find((p: any) => p.id === productId);
       if (product && totalQty > product.displayQuantity) {
-        toast.error(
-          `Sản phẩm "${product.name}" không đủ tồn kho! Bạn đang đặt ${totalQty} nhưng hệ thống chỉ còn ${product.displayQuantity}.`,
-          { duration: 5000 }
-        );
+        toast.error(`Sản phẩm "${product.name}" không đủ tồn kho! Bạn đang đặt ${totalQty} nhưng hệ thống chỉ còn ${product.displayQuantity}.`);
         return false;
       }
     }
@@ -180,13 +224,7 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
     const newItems = [...items];
     if (field === 'productId') {
       const selected = availableProducts.find((p: any) => p.id === value);
-      newItems[index] = { 
-        ...newItems[index], 
-        productId: value, 
-        unitPrice: selected?.retailPrice || 0, 
-        productName: selected?.name || '', 
-        quantity: 1 
-      };
+      newItems[index] = { ...newItems[index], productId: value, unitPrice: selected?.retailPrice || 0, productName: selected?.name || '', quantity: 1 };
     } else {
       newItems[index] = { ...newItems[index], [field]: value };
     }
@@ -194,8 +232,6 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
   };
 
   const handleRemoveItem = (index: number) => setItems(items.filter((_, i) => i !== index));
-
-  const totalAmount = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
 
   const isValid = form.customerId && form.shippingName && form.shippingPhone && form.shippingAddress && form.provinceCode &&
                   items.length > 0 && items.every(i => i.productId && i.quantity > 0) &&
@@ -206,51 +242,61 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
     createMut.mutate();
   };
 
-  // Đã check valid array
   const hasValidItems = items.length > 0 && items.some(i => i.productId);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-6xl overflow-hidden flex flex-col max-h-[95vh] animate-slide-up">
+  // ĐÃ SỬA: Đưa nội dung Modal vào createPortal để che phủ 100% màn hình
+  const modalContent = (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 transition-all">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl overflow-hidden flex flex-col max-h-[95vh] animate-slide-up border border-slate-100">
         
-        <div className="flex justify-between items-center p-5 border-b bg-blue-600 text-white rounded-t-2xl shrink-0">
-          <h2 className="text-xl font-bold flex items-center gap-2"><ShoppingBag className="w-5 h-5"/> Tạo đơn hàng (Auto-Routing)</h2>
-          <button onClick={onClose} className="text-blue-100 hover:text-white bg-blue-700/50 p-1.5 rounded-full"><X className="w-5 h-5" /></button>
+        <div className="flex justify-between items-center p-5 border-b bg-blue-600 text-white rounded-t-3xl shrink-0">
+          <h2 className="text-xl font-bold flex items-center gap-2"><ShoppingBag className="w-5 h-5"/> Tạo đơn hàng Telesale</h2>
+          <button onClick={onClose} className="text-blue-100 hover:text-white bg-blue-700/50 p-1.5 rounded-full transition-colors"><X className="w-5 h-5" /></button>
         </div>
 
-        <div className="p-5 overflow-y-auto flex-1 custom-scrollbar bg-gray-50 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="p-5 overflow-y-auto flex-1 custom-scrollbar bg-slate-50/50 grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-4 space-y-4">
-            <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm space-y-4">
-              <h3 className="font-semibold text-gray-800 flex items-center gap-2 border-b pb-2"><User className="w-4 h-4 text-blue-500" /> Thông tin Khách hàng</h3>
+            <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.02)] space-y-4">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2 border-b border-slate-50 pb-3"><User className="w-4 h-4 text-blue-500" /> Thông tin Khách hàng</h3>
               <AsyncSelect cacheOptions defaultOptions loadOptions={loadCustomerOptions} value={currentCustomer} onChange={handleCustomerChange} placeholder="Gõ tên hoặc SĐT..." className="text-sm font-medium"/>
-              <input className="input" placeholder="Tên người nhận..." value={form.shippingName} onChange={e => setForm({ ...form, shippingName: e.target.value })} />
-              <input className="input" placeholder="Số điện thoại..." value={form.shippingPhone} onChange={e => setForm({ ...form, shippingPhone: e.target.value })} />
-              <textarea className="input resize-none" rows={2} placeholder="Địa chỉ chi tiết..." value={form.shippingAddress} onChange={e => setForm({ ...form, shippingAddress: e.target.value })} />
+              <input className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" placeholder="Tên người nhận..." value={form.shippingName} onChange={e => setForm({ ...form, shippingName: e.target.value })} />
+              <input className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" placeholder="Số điện thoại..." value={form.shippingPhone} onChange={e => setForm({ ...form, shippingPhone: e.target.value })} />
+              <textarea className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all resize-none" rows={2} placeholder="Địa chỉ chi tiết..." value={form.shippingAddress} onChange={e => setForm({ ...form, shippingAddress: e.target.value })} />
             </div>
-            <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm space-y-4">
-              <h3 className="font-semibold text-gray-800 flex items-center gap-2 border-b pb-2"><CreditCard className="w-4 h-4 text-purple-500" /> Hình thức thanh toán</h3>
-              <select className="input" value={form.paymentMethod} onChange={e => setForm({ ...form, paymentMethod: e.target.value })}><option value="COD">Thanh toán khi nhận (COD)</option><option value="BANK_TRANSFER">Chuyển khoản</option></select>
-              <textarea className="input resize-none" rows={2} placeholder="Ghi chú đơn hàng..." value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} />
+            <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.02)] space-y-4">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2 border-b border-slate-50 pb-3"><CreditCard className="w-4 h-4 text-purple-500" /> Thanh toán & Ghi chú</h3>
+              <select className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.paymentMethod} onChange={e => setForm({ ...form, paymentMethod: e.target.value })}><option value="COD">Thanh toán khi nhận (COD)</option><option value="BANK_TRANSFER">Chuyển khoản</option></select>
+              <textarea className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all resize-none" rows={2} placeholder="Ghi chú đơn hàng..." value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} />
             </div>
           </div>
 
           <div className="lg:col-span-8 flex flex-col gap-4">
-            <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
+            <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.02)]">
               <div className="grid grid-cols-2 gap-4 mb-4">
-                <div><label className="label">Hình thức</label><select className="input font-bold text-primary-700" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}><option value="DELIVERY">Giao hàng (DELIVERY)</option><option value="BOPIS">Nhận tại quầy (BOPIS)</option></select></div>
-                <div><label className="label">Tỉnh / TP Giao hàng *</label><select className="input" value={form.provinceCode} onChange={e => setForm({ ...form, provinceCode: e.target.value })}><option value="">-- Chọn Tỉnh/TP --</option>{PROVINCES.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}</select></div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Hình thức</label>
+                  <select className="w-full px-4 py-2.5 bg-indigo-50 border border-indigo-100 rounded-xl text-sm font-bold text-indigo-700 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}>
+                    <option value="DELIVERY">Giao hàng (DELIVERY)</option>
+                    <option value="BOPIS">Nhận tại quầy (BOPIS)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Tỉnh / TP Giao hàng *</label>
+                  <select className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.provinceCode} onChange={e => setForm({ ...form, provinceCode: e.target.value })}>
+                    <option value="">-- Chọn Tỉnh/TP --</option>
+                    {PROVINCES.map(p => <option key={p.code} value={p.code}>{p.name}</option>)}
+                  </select>
+                </div>
               </div>
 
-              {/* ĐÃ SỬA: GIAO DIỆN HIỂN THỊ KẾ HOẠCH GOM HÀNG */}
-              {isAdmin() && form.provinceCode && hasValidItems && (
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl min-h-[120px] transition-all">
+              {/* KẾ HOẠCH GOM HÀNG */}
+              {form.provinceCode && hasValidItems && (
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl min-h-[120px] transition-all mt-4">
                   <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
                     <Building2 className="w-4 h-4 text-indigo-600" /> Kế hoạch Phân bổ Kho (Consolidation Plan)
-                    {/* Giữ nguyên icon xoay bên cạnh thay vì xóa cả khối đi */}
                     {isSuggesting && <Spinner size="sm" className="ml-2 text-indigo-500" />}
                   </h4>
                   
-                  {/* Bọc opacity lại để làm mờ nhẹ khi loading chứ không xóa bỏ */}
                   <div className={`transition-opacity duration-300 ${isSuggesting ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
                     {suggestError ? (
                       <p className="text-sm text-red-600 font-medium flex items-center gap-1"><AlertCircle className="w-4 h-4"/> {suggestError}</p>
@@ -258,6 +304,9 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
                       <div className="space-y-3">
                         {consolidationPlans.map((plan: any) => {
                           const isSelected = form.assignedWarehouseId === plan.warehouseId;
+                          // Nếu là Manager, chỉ cho phép chọn kho của chính họ
+                          if (!isAdmin() && plan.warehouseId !== user?.warehouseId) return null;
+                          
                           return (
                             <div key={plan.warehouseId} onClick={() => setForm({ ...form, assignedWarehouseId: plan.warehouseId })} className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${isSelected ? 'border-indigo-500 bg-white shadow-md' : 'border-slate-200 bg-white/50 hover:border-indigo-300'}`}>
                               <div className="flex justify-between items-start mb-2">
@@ -265,11 +314,11 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
                                 {isSelected ? <CheckCircle2 className="w-5 h-5 text-indigo-600" /> : <div className="w-5 h-5 rounded-full border-2 border-slate-300"/>}
                               </div>
                               {plan.isReadyToShip ? (
-                                <p className="text-sm text-emerald-600 bg-emerald-50 px-2 py-1 rounded inline-block">✓ Kho đủ hàng. Giao ngay!</p>
+                                <p className="text-sm text-emerald-600 bg-emerald-50 px-2 py-1 rounded inline-block font-medium">✓ Kho đủ hàng. Có thể đóng gói ngay!</p>
                               ) : (
-                                <div className="text-sm text-amber-700 bg-amber-50 p-2 rounded border border-amber-100">
-                                  <p className="font-bold flex items-center gap-1"><AlertCircle className="w-4 h-4"/> Thiếu hàng. Tự động luân chuyển từ:</p>
-                                  <ul className="list-disc ml-5 mt-1 opacity-90">
+                                <div className="text-sm text-amber-700 bg-amber-50 p-3 rounded-lg border border-amber-100">
+                                  <p className="font-bold flex items-center gap-1.5"><AlertCircle className="w-4 h-4"/> Kho thiếu hàng. Hệ thống sẽ tự động tạo phiếu luân chuyển từ:</p>
+                                  <ul className="list-disc ml-6 mt-1.5 opacity-90 space-y-0.5">
                                     {(plan.transferRequirements || []).map((req: any, idx: number) => (
                                       <li key={idx}>Gửi <b>{req.quantity}x {req.productName}</b> từ <b>{req.fromWarehouseName}</b></li>
                                     ))}
@@ -288,38 +337,102 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
               )}
             </div>
 
-            <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex-1 flex flex-col">
-              <div className="flex justify-between items-center border-b pb-3 mb-3">
-                <h3 className="font-semibold text-gray-800 flex items-center gap-2"><ShoppingBag className="w-4 h-4 text-green-500" /> Sản phẩm</h3>
-                <button type="button" onClick={handleAddItem} className="btn-secondary btn-sm"><Plus className="w-4 h-4 mr-1" /> Thêm Dòng</button>
+            <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_rgb(0,0,0,0.02)] flex-1 flex flex-col">
+              <div className="flex justify-between items-center border-b border-slate-50 pb-3 mb-3">
+                <h3 className="font-bold text-slate-800 flex items-center gap-2"><ShoppingBag className="w-4 h-4 text-green-500" /> Sản phẩm</h3>
+                <button type="button" onClick={handleAddItem} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-lg text-xs font-bold transition-colors"><Plus className="w-3.5 h-3.5" /> Thêm Dòng</button>
               </div>
-              <div className="flex-1 overflow-y-auto space-y-2 max-h-[300px]">
+              <div className="flex-1 overflow-y-auto space-y-2 max-h-[250px] custom-scrollbar pr-1">
                 {items.map((item, index) => (
-                  <div key={index} className="flex gap-2 items-center bg-gray-50 p-2 rounded-lg border border-gray-200">
-                    <select className="input text-sm flex-1" value={item.productId} onChange={e => handleUpdateItem(index, 'productId', e.target.value)}>
+                  <div key={index} className="flex gap-2 items-center bg-slate-50 p-2 rounded-xl border border-slate-200/60">
+                    <select className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-800 focus:border-indigo-500 outline-none flex-1" value={item.productId} onChange={e => handleUpdateItem(index, 'productId', e.target.value)}>
                       <option value="">-- Chọn SP --</option>
                       {(availableProducts || []).map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
-                    <input type="number" min={1} className="input text-sm w-20 text-center font-bold" value={item.quantity || ''} onChange={e => handleUpdateItem(index, 'quantity', parseInt(e.target.value) || 0)} />
-                    <div className="w-28 text-right font-bold text-primary-600 text-sm">{formatCurrency(item.quantity * item.unitPrice)}</div>
-                    <button onClick={() => handleRemoveItem(index)} className="p-2 text-red-500 hover:bg-red-100 rounded-lg"><Trash2 className="w-4 h-4" /></button>
+                    <input type="number" min={1} className="w-20 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-center text-slate-800 focus:border-indigo-500 outline-none" value={item.quantity || ''} onChange={e => handleUpdateItem(index, 'quantity', parseInt(e.target.value) || 0)} />
+                    <div className="w-28 text-right font-black text-indigo-600 text-[15px] tracking-tight">{formatCurrency(item.quantity * item.unitPrice)}</div>
+                    <button onClick={() => handleRemoveItem(index)} className="p-2 text-rose-500 hover:bg-rose-100 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
                   </div>
                 ))}
               </div>
+
+              {/* Khu vực tính tiền, Phí ship, Khuyến mãi */}
+              {items.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-slate-100 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-slate-500">Tổng tiền hàng</span>
+                    <span className="font-bold text-slate-800 text-base">{formatCurrency(totalAmount)}</span>
+                  </div>
+                  
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-sm font-semibold text-slate-500 flex items-center gap-1.5"><Truck className="w-4 h-4 text-slate-400"/> Phí vận chuyển</span>
+                    <input 
+                      type="number" min={0} step={1000}
+                      className="w-32 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm font-bold text-right text-slate-800 focus:border-indigo-500 outline-none shadow-sm" 
+                      placeholder="0"
+                      value={shippingFee || ''}
+                      onChange={e => setShippingFee(parseInt(e.target.value) || 0)}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-sm font-semibold text-slate-500 flex items-center gap-1.5"><Tag className="w-4 h-4 text-slate-400"/> Mã khuyến mãi</span>
+                    <div className="flex gap-2 w-48">
+                      <input 
+                        type="text" 
+                        className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm font-mono font-bold text-slate-800 focus:border-indigo-500 outline-none uppercase shadow-sm" 
+                        placeholder="Mã KM..."
+                        value={promotionCode}
+                        onChange={e => setPromotionCode(e.target.value.toUpperCase())}
+                        disabled={promotionDiscount > 0}
+                      />
+                      {promotionDiscount > 0 ? (
+                        <button onClick={() => { setPromotionCode(''); setPromotionDiscount(0); }} className="px-3 bg-rose-50 text-rose-600 rounded-lg text-xs font-bold hover:bg-rose-100 transition-colors">Xóa</button>
+                      ) : (
+                        <button onClick={handleApplyPromo} disabled={validatePromoMut.isPending || !promotionCode} className="px-3 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100 transition-colors disabled:opacity-50">Áp dụng</button>
+                      )}
+                    </div>
+                  </div>
+                  {promotionDiscount > 0 && (
+                    <div className="flex justify-end text-[15px] font-black tracking-tight text-emerald-600">- {formatCurrency(promotionDiscount)}</div>
+                  )}
+
+                  {currentCustomer?.original && currentCustomer.original.loyaltyPoints >= 500 && (
+                    <div className="flex items-center justify-between gap-4 bg-blue-50/50 p-3 rounded-xl border border-blue-100">
+                      <span className="text-sm font-semibold text-blue-800 flex items-center gap-1.5"><Gift className="w-4 h-4 text-blue-500"/> Đổi điểm ({currentCustomer.original.loyaltyPoints} điểm)</span>
+                      <select 
+                        className="w-32 px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-sm font-bold text-blue-700 focus:border-blue-500 outline-none shadow-sm cursor-pointer"
+                        value={pointsToUse}
+                        onChange={e => setPointsToUse(parseInt(e.target.value))}
+                      >
+                        <option value={0}>Không đổi</option>
+                        {Array.from({ length: Math.floor(currentCustomer.original.loyaltyPoints / 500) }, (_, i) => (i + 1) * 500).map(pts => (
+                          <option key={pts} value={pts}>-{formatCurrency(pts * 100)}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between items-end pt-4 border-t border-slate-200 mt-2">
+                    <span className="font-bold text-slate-800 uppercase tracking-wider text-sm">Khách phải trả</span>
+                    <span className="text-3xl font-black text-indigo-600 tracking-tight">{formatCurrency(finalAmount)}</span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="p-5 border-t bg-white rounded-b-2xl flex items-center justify-between shrink-0">
-          <p className="text-xs text-gray-500 hidden md:block">
-            {isAdmin() ? (form.assignedWarehouseId ? 'Đã chọn chi nhánh xuất hàng.' : 'Vui lòng chọn 1 chi nhánh xuất hàng ở mục Định tuyến.') : 'Chi nhánh của bạn sẽ mặc định đóng gói đơn này.'}
+        <div className="p-5 border-t border-slate-100 bg-white rounded-b-3xl flex items-center justify-between shrink-0">
+          <p className="text-xs font-medium text-slate-400 hidden md:block">
+            {isAdmin() ? (form.assignedWarehouseId ? 'Đã chọn chi nhánh xuất hàng.' : 'Vui lòng chọn 1 chi nhánh xuất hàng ở mục Kế hoạch phân bổ.') : 'Chi nhánh của bạn sẽ mặc định đóng gói đơn này.'}
           </p>
           <div className="flex gap-3 w-full md:w-auto">
-            <button onClick={onClose} className="btn-secondary px-8 py-2.5 text-base w-full md:w-auto">Hủy bỏ</button>
+            <button onClick={onClose} className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors w-full md:w-auto">Hủy bỏ</button>
             <button 
               onClick={handleSubmit} 
               disabled={!isValid || createMut.isPending}
-              className="btn-primary px-8 py-2.5 text-base w-full md:w-auto shadow-md"
+              className="px-8 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-all shadow-[0_4px_12px_rgb(99,102,241,0.3)] disabled:opacity-50 disabled:shadow-none w-full md:w-auto flex items-center justify-center"
             >
               {createMut.isPending ? <Spinner size="sm" className="text-white" /> : 'Chốt Đơn (Tạo)'}
             </button>
@@ -328,4 +441,6 @@ export function CreateOrderModal({ onClose, onSaved }: Props) {
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

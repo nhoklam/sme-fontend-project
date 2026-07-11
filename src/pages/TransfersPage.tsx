@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeftRight, Truck, CheckCircle, Plus, Eye, Search, Edit, FileSpreadsheet, Trash2, MapPin, ChevronDown, DollarSign } from 'lucide-react';
+import { ArrowLeftRight, Truck, CheckCircle, Plus, Eye, Search, Edit, FileSpreadsheet, Trash2, MapPin, ChevronDown, DollarSign, ShoppingBag } from 'lucide-react';
 import { 
   PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer
 } from 'recharts';
@@ -8,11 +8,12 @@ import * as XLSX from 'xlsx';
 import { transferService } from '@/services/transfer.service';
 import { warehouseService } from '@/services/warehouse.service';
 import { productService } from '@/services/product.service'; 
-import { formatDateTime } from '@/lib/utils';
+import { formatDateTime, formatCurrency } from '@/lib/utils';
 import { PageLoader, EmptyState, Pagination, ConfirmDialog, Spinner } from '@/components/ui';
 import toast from 'react-hot-toast';
-import { Client } from '@stomp/stompjs';
 import { useAuthStore } from '@/stores/auth.store';
+// ĐÃ THÊM: Sử dụng Hook WebSocket chuẩn thay vì tự khởi tạo
+import { useDashboardWebSocket } from '@/hooks/useDashboardWebSocket';
 
 import { CreateTransferModal } from './CreateTransferModal';
 import { TransferDetailsModal } from './TransferDetailsModal';
@@ -34,7 +35,6 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   CANCELLED: { label: 'Đã hủy', className: 'bg-rose-50 text-rose-700 border-rose-200/60' },
 };
 
-// --- CẤU HÌNH TOOLTIP CHO BIỂU ĐỒ ---
 const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     return (
@@ -61,8 +61,6 @@ export default function TransfersPage() {
   const [keyword, setKeyword] = useState('');
   const [debouncedKeyword, setDebouncedKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  
-  // State bộ lọc chi nhánh cho Admin
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('');
 
   const [confirmDispatch, setConfirmDispatch] = useState<string | null>(null);
@@ -72,7 +70,8 @@ export default function TransfersPage() {
   const [editingTransferId, setEditingTransferId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  const stompClientRef = useRef<Client | null>(null);
+  // ĐÃ SỬA: Sử dụng Hook WebSocket chuẩn, tự động dọn dẹp memory leak
+  useDashboardWebSocket({ warehouseId: user?.warehouseId });
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedKeyword(keyword), 500);
@@ -95,8 +94,6 @@ export default function TransfersPage() {
         return { content: [], totalPages: 0, totalElements: 0 };
       }
     },
-    refetchOnWindowFocus: true, 
-    staleTime: 0, 
   });
 
   const { data: warehouses } = useQuery({
@@ -134,7 +131,6 @@ export default function TransfersPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Lỗi khi xuất kho'),
   });
 
-  // Mutation Hủy phiếu chuyển kho
   const cancelMut = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) => transferService.cancel(id, reason),
     onSuccess: async () => {
@@ -150,55 +146,6 @@ export default function TransfersPage() {
     }
   };
 
-  useEffect(() => {
-    const token = localStorage.getItem('accessToken');
-    if (!token || !user?.warehouseId) return;
-
-    if (stompClientRef.current && stompClientRef.current.active) return;
-
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = window.location.hostname;
-    const brokerURL = (import.meta as any).env.VITE_WS_URL || `${wsProtocol}//${wsHost}:8080/api/ws`;
-
-    const client = new Client({
-      brokerURL: brokerURL,
-      connectHeaders: { Authorization: `Bearer ${token}` },
-      reconnectDelay: 5000, 
-      
-      debug: (str) => {
-        console.log('🔍 [STOMP DEBUG]:', str); 
-      },
-
-      onConnect: () => {
-        console.log('✅ [STOMP] KẾT NỐI THÀNH CÔNG CHO KHO:', user.warehouseId);
-        const topic = `/topic/warehouse/${user.warehouseId}/transfer`;
-        
-        client.subscribe(topic, (message) => {
-          console.log('🔔 [STOMP] CÓ BIẾN ĐỘNG TỪ SERVER:', message.body);
-          toast.success('📦 Có biến động từ kho đối tác!', { icon: '🔔' });
-          qc.refetchQueries({ queryKey: ['transfers'] });
-        });
-      },
-      
-      onStompError: (frame) => {
-        console.error('❌ [STOMP ERROR] Lỗi Broker:', frame.headers['message']);
-      },
-      onWebSocketError: (event) => {
-        console.error('❌ [WS ERROR] Mất kết nối WebSocket. Kiểm tra lại Backend!');
-      }
-    });
-
-    stompClientRef.current = client;
-    client.activate();
-
-    return () => { 
-      if (stompClientRef.current) {
-        stompClientRef.current.deactivate();
-        stompClientRef.current = null;
-      }
-    };
-  }, [user?.warehouseId, qc]);
-
   const transferList = Array.isArray(data) ? data : (data?.content ?? []);
   const totalPages = data?.totalPages ?? 1;
   const totalElements = data?.totalElements ?? transferList.length;
@@ -212,11 +159,6 @@ export default function TransfersPage() {
     }, 0);
   };
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
-  };
-
-  // --- TÍNH TOÁN DATA CHO MINI DASHBOARD ---
   const dashboardStats = useMemo(() => {
     let totalValue = 0;
     const statusCount: Record<string, { count: number, color: string }> = {};
@@ -327,9 +269,8 @@ export default function TransfersPage() {
         </div>
       </div>
 
-      {/* ── MINI DASHBOARD (BỐ CỤC TỶ LỆ VÀNG) ── */}
+      {/* ── MINI DASHBOARD ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in">
-        {/* Card 1: Tổng số phiếu */}
         <div className="lg:col-span-4 bg-white p-6 rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 flex flex-col justify-center relative overflow-hidden group">
           <div className="absolute -right-6 -top-6 w-24 h-24 bg-indigo-50 rounded-full blur-2xl group-hover:bg-indigo-100 transition-colors duration-700"></div>
           <div className="relative z-10 flex items-center gap-4 mb-4">
@@ -347,7 +288,6 @@ export default function TransfersPage() {
           </div>
         </div>
 
-        {/* Card 2: Biểu đồ trạng thái */}
         <div className="lg:col-span-8 bg-white p-6 rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 flex items-center gap-8">
           <div className="w-1/3 h-[120px] relative shrink-0">
             {dashboardStats.chartData.length > 0 ? (
@@ -464,12 +404,19 @@ export default function TransfersPage() {
                 transferList.map((t: any) => (
                   <tr key={t.id} className="hover:bg-slate-50/80 transition-colors group">
                     <td className="px-6 py-4">
-                      <button 
-                        onClick={() => setViewingTransferId(t.id)} 
-                        className="font-mono font-bold text-[14px] text-indigo-600 hover:text-indigo-800 transition-colors block text-left"
-                      >
-                        {t.code}
-                      </button>
+                      <div className="flex flex-col gap-1">
+                        <button 
+                          onClick={() => setViewingTransferId(t.id)} 
+                          className="font-mono font-bold text-[14px] text-indigo-600 hover:text-indigo-800 transition-colors block text-left w-max"
+                        >
+                          {t.code}
+                        </button>
+                        {t.referenceOrderId && (
+                          <span className="inline-flex items-center gap-1 text-[9px] font-bold bg-indigo-50 text-indigo-500 px-1.5 py-0.5 rounded border border-indigo-100 uppercase tracking-wider w-max">
+                            <ShoppingBag className="w-2.5 h-2.5"/> Đơn gom
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <span className="font-semibold text-slate-800 bg-slate-50 px-2.5 py-1 rounded-md border border-slate-100">
@@ -530,8 +477,8 @@ export default function TransfersPage() {
                           </button>
                         )}
                         
-                        {/* Nút Sửa Phiếu */}
-                        {t.status === 'DRAFT' && (isAdmin() || user?.warehouseId === t.fromWarehouseId) && (
+                        {/* ĐÃ SỬA: Ẩn nút Sửa nếu là phiếu gom hàng tự động */}
+                        {t.status === 'DRAFT' && !t.referenceOrderId && (isAdmin() || user?.warehouseId === t.fromWarehouseId) && (
                           <button
                             onClick={() => setEditingTransferId(t.id)}
                             className="p-1.5 rounded-lg flex items-center justify-center text-amber-600 hover:bg-amber-50 transition-colors shrink-0"
@@ -541,8 +488,8 @@ export default function TransfersPage() {
                           </button>
                         )}
 
-                        {/* Nút Hủy phiếu */}
-                        {t.status === 'DRAFT' && (isAdmin() || user?.warehouseId === t.fromWarehouseId) && (
+                        {/* ĐÃ SỬA: Ẩn nút Hủy nếu là phiếu gom hàng tự động */}
+                        {t.status === 'DRAFT' && !t.referenceOrderId && (isAdmin() || user?.warehouseId === t.fromWarehouseId) && (
                           <button
                             onClick={() => handleCancelTransfer(t.id)}
                             className="p-1.5 rounded-lg flex items-center justify-center text-rose-500 hover:bg-rose-50 transition-colors shrink-0"

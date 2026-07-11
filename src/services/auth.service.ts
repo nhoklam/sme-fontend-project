@@ -1,5 +1,9 @@
 import api from '@/lib/axios';
-import type { ApiResponse, AuthResponse, LoginRequest, UserResponse, CreateUserRequest, ChangePasswordRequest } from '@/types';
+import type { 
+  ApiResponse, AuthResponse, LoginRequest, UserResponse, 
+  CreateUserRequest, ChangePasswordRequest,
+  ForgotPasswordRequest, ResetPasswordRequest 
+} from '@/types';
 
 export const authService = {
   login: (data: LoginRequest) =>
@@ -14,6 +18,13 @@ export const authService = {
   changePassword: (data: ChangePasswordRequest) =>
     api.put<ApiResponse<void>>('/auth/change-password', data),
 
+  // [MỚI THÊM] Quên mật khẩu & Đặt lại mật khẩu
+  forgotPassword: (data: ForgotPasswordRequest) =>
+    api.post<ApiResponse<void>>('/auth/forgot-password', data),
+
+  resetPassword: (data: ResetPasswordRequest) =>
+    api.post<ApiResponse<void>>('/auth/reset-password', data),
+
   getUsers: (params?: { keyword?: string; role?: string; warehouseId?: string }) => 
     api.get<ApiResponse<any[]>>('/auth/users', { params }),
 
@@ -25,6 +36,7 @@ export const authService = {
 
   deactivateUser: (id: string) =>
     api.patch<ApiResponse<UserResponse>>(`/auth/users/${id}/deactivate`),
+    
   updateUser: (id: string, data: any) =>
     api.put<ApiResponse<any>>(`/auth/users/${id}`, data),
 };

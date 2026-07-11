@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom'; // [MỚI THÊM] Import Link
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -42,23 +42,16 @@ export default function LoginPage() {
   };
 
   return (
-    // Nền trắng trên Mobile để tạo cảm giác Native App, nền Slate-50 trên Desktop
     <div className="min-h-screen bg-white md:bg-slate-50 flex items-center justify-center p-0 md:p-8 relative overflow-hidden selection:bg-indigo-100 selection:text-indigo-900">
       
-      {/* ── BACKGROUND BLOB DECORATIONS (Chỉ hiện trên Desktop) ── */}
       <div className="hidden md:block absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-indigo-300/30 rounded-full blur-[100px] mix-blend-multiply pointer-events-none"></div>
       <div className="hidden md:block absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-emerald-300/20 rounded-full blur-[100px] mix-blend-multiply pointer-events-none"></div>
 
-      {/* ── MAIN CARD: Tràn viền trên Mobile, dạng thẻ trên Desktop ── */}
       <div className="w-full h-screen md:h-auto max-w-[1000px] bg-white md:rounded-[32px] md:shadow-2xl border-0 md:border border-slate-100 flex flex-col md:flex-row overflow-hidden z-10 animate-fade-in relative">
         
-        {/* Lớp nền gradient mờ ở trên cùng dành cho Mobile */}
         <div className="md:hidden absolute top-0 left-0 right-0 h-48 bg-gradient-to-b from-indigo-50/80 to-white pointer-events-none"></div>
 
-        {/* ── TRÁI: BRANDING PANEL (Ẩn trên Mobile) ── */}
         <div className="hidden md:flex w-1/2 bg-indigo-600 p-12 flex-col justify-between relative overflow-hidden">
-          
-          {/* Các vòng sáng trang trí bên trong thẻ Indigo */}
           <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
           <div className="absolute bottom-0 left-0 w-80 h-80 bg-indigo-900/40 rounded-full blur-3xl -ml-10 -mb-10 pointer-events-none"></div>
 
@@ -74,7 +67,6 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {/* Social Proof / Trust Badge */}
           <div className="relative z-10 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-5 mt-12 shadow-lg">
             <div className="flex items-center gap-3 mb-3">
               <div className="flex -space-x-3">
@@ -89,10 +81,8 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* ── PHẢI: FORM ĐĂNG NHẬP ── */}
         <div className="w-full md:w-1/2 p-6 sm:p-12 md:p-14 flex flex-col justify-center min-h-screen md:min-h-0 relative z-10">
           
-          {/* Logo & Header hiển thị riêng cho Mobile */}
           <div className="md:hidden flex flex-col items-center mb-10 pt-8">
             <div className="w-16 h-16 bg-indigo-600 rounded-[20px] flex items-center justify-center shadow-lg shadow-indigo-600/30 mb-5">
               <Store className="w-8 h-8 text-white" />
@@ -101,20 +91,17 @@ export default function LoginPage() {
             <p className="text-sm font-bold text-slate-500 mt-1.5 uppercase tracking-wider">Hệ thống quản trị</p>
           </div>
 
-          {/* Header hiển thị trên Desktop */}
           <div className="hidden md:block mb-10 text-left">
             <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Chào mừng trở lại 👋</h2>
             <p className="text-sm font-medium text-slate-500 mt-2">Vui lòng đăng nhập để truy cập vào hệ thống.</p>
           </div>
           
-          {/* Header nhỏ cho Mobile sát Form */}
           <div className="md:hidden mb-6">
             <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Đăng nhập 👋</h2>
             <p className="text-sm font-medium text-slate-500 mt-1">Chào mừng bạn quay lại hệ thống.</p>
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-            {/* Username Input */}
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-2">Tên đăng nhập</label>
               <input
@@ -131,10 +118,13 @@ export default function LoginPage() {
               )}
             </div>
 
-            {/* Password Input */}
             <div>
+              {/* [MỚI THÊM] Nút Quên mật khẩu */}
               <div className="flex justify-between items-end mb-2">
                 <label className="block text-sm font-bold text-slate-700">Mật khẩu</label>
+                <Link to="/forgot-password" className="text-xs font-bold text-indigo-600 hover:text-indigo-700 hover:underline">
+                  Quên mật khẩu?
+                </Link>
               </div>
               <div className="relative">
                 <input
@@ -146,7 +136,6 @@ export default function LoginPage() {
                   placeholder="••••••••"
                   autoComplete="current-password"
                 />
-                {/* Vùng chạm (Touch Target) của nút bật mật khẩu được làm lớn hơn (w-14) để dễ bấm trên điện thoại */}
                 <button
                   type="button"
                   onClick={() => setShowPwd(!showPwd)}
@@ -161,7 +150,6 @@ export default function LoginPage() {
               )}
             </div>
 
-            {/* Submit Button */}
             <button
               type="submit"
               disabled={loading}
@@ -172,13 +160,6 @@ export default function LoginPage() {
               ) : 'Đăng nhập vào hệ thống'}
             </button>
           </form>
-
-          {/* Development Hint Footer */}
-          <div className="mt-10 md:mt-12 pt-6 border-t border-slate-100 text-center md:text-left">
-            <p className="text-[13px] font-medium text-slate-500 flex flex-wrap items-center justify-center md:justify-start gap-2 leading-relaxed">
-              
-            </p>
-          </div>
           
         </div>
       </div>

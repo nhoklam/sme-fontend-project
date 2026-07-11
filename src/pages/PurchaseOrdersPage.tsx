@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Package, CheckCircle, XCircle, Eye, Search, Filter, ClipboardList, ChevronDown, DollarSign } from 'lucide-react';
+import { Plus, Package, CheckCircle, XCircle, Eye, Search, Filter, ClipboardList, ChevronDown, DollarSign, Download, MapPin } from 'lucide-react';
 import { 
   PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer
 } from 'recharts';
+import * as XLSX from 'xlsx';
 import { purchaseService } from '@/services/purchase.service';
 import { supplierService } from '@/services/supplier.service';
 import { warehouseService } from '@/services/warehouse.service';
@@ -15,15 +16,13 @@ import toast from 'react-hot-toast';
 import { CreatePurchaseOrderModal } from './CreatePurchaseOrderModal';
 import { PurchaseOrderDetailsModal } from './PurchaseOrderDetailsModal';
 
-// Tiện ích map tiếng Việt cho trạng thái
+// ĐÃ SỬA: Xóa DRAFT khỏi danh sách
 const STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Nháp',
   PENDING: 'Chờ duyệt',
   COMPLETED: 'Đã nhập kho',
   CANCELLED: 'Đã hủy'
 };
 
-// --- CẤU HÌNH TOOLTIP CHO BIỂU ĐỒ ---
 const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     return (
@@ -43,39 +42,42 @@ const CustomTooltip = ({ active, payload }: any) => {
 };
 
 export default function PurchaseOrdersPage() {
-  const { warehouseId, isAdmin } = useAuthStore();
+  const { user, isAdmin } = useAuthStore();
   const qc = useQueryClient();
   
   const [page, setPage] = useState(0);
   
-  // STATE TÌM KIẾM & LỌC
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  // ĐÃ THÊM: State cho bộ lọc chi nhánh
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('');
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [viewingPoId, setViewingPoId] = useState<string | null>(null);
   const [confirmApprove, setConfirmApprove] = useState<string | null>(null);
   const [cancelPoId, setCancelPoId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
+  // ĐÃ THÊM: State cho Export Excel
+  const [isExporting, setIsExporting] = useState(false);
 
-  // Debounce tìm kiếm
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearch(searchTerm);
-      setPage(0); // Về trang 1 khi gõ tìm
+      setPage(0); 
     }, 500);
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Cập nhật Query gọi API kèm Filter
   const { data, isLoading, isRefetching } = useQuery({
-    queryKey: ['purchase-orders', page, debouncedSearch, statusFilter],
+    queryKey: ['purchase-orders', page, debouncedSearch, statusFilter, selectedWarehouseId],
     queryFn: () => purchaseService.getAll({ 
       page, 
       size: 20, 
       keyword: debouncedSearch, 
-      status: statusFilter === 'ALL' ? '' : statusFilter 
+      status: statusFilter === 'ALL' ? '' : statusFilter,
+      // ĐÃ THÊM: Truyền warehouseId vào API
+      warehouseId: isAdmin() ? (selectedWarehouseId || undefined) : user?.warehouseId
     }).then(r => r.data.data),
   });
 
@@ -106,7 +108,7 @@ export default function PurchaseOrdersPage() {
     onSuccess: () => { 
       toast.success('Duyệt phiếu nhập thành công! Tồn kho đã được cập nhật.'); 
       qc.invalidateQueries({ queryKey: ['purchase-orders'] }); 
-      qc.invalidateQueries({ queryKey: ['inventory-search'] }); // Bổ sung làm mới kho
+      qc.invalidateQueries({ queryKey: ['inventory-search'] }); 
       setConfirmApprove(null); 
     },
     onError: (e: any) => toast.error(e?.response?.data?.message ?? 'Lỗi duyệt phiếu'),
@@ -131,7 +133,60 @@ export default function PurchaseOrdersPage() {
     cancelMut.mutate({ id: cancelPoId!, reason: cancelReason });
   };
 
-  // --- TÍNH TOÁN DATA CHO MINI DASHBOARD ---
+  // ĐÃ THÊM: Hàm xử lý Xuất Excel
+  const handleExportExcel = async () => {
+    try {
+      setIsExporting(true);
+      const response = await purchaseService.getAll({
+        page: 0,
+        size: 10000, 
+        status: statusFilter === 'ALL' ? undefined : statusFilter,
+        keyword: debouncedSearch || undefined,
+        warehouseId: isAdmin() ? (selectedWarehouseId || undefined) : user?.warehouseId
+      });
+      
+      const allPos = response?.data?.data?.content || [];
+      if (allPos.length === 0) {
+        toast.error('Không có dữ liệu để xuất Excel');
+        return;
+      }
+
+      const excelData = allPos.map((po: any, index: number) => {
+        const supplierName = supplierMap.get(po.supplierId) || po.supplierId;
+        const warehouseName = warehouseMap.get(po.warehouseId) || po.warehouseId;
+        const statusLabel = STATUS_LABELS[po.status] || po.status;
+
+        return {
+          'STT': index + 1,
+          'Mã Phiếu': po.code,
+          'Nhà Cung Cấp': supplierName,
+          'Chi Nhánh Nhập': warehouseName,
+          'Trạng Thái': statusLabel,
+          'Tổng Tiền (VNĐ)': po.totalAmount,
+          'Ngày Tạo': formatDateTime(po.createdAt),
+          'Ghi Chú': po.note || ''
+        };
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(excelData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "PhieuNhapKho");
+
+      worksheet['!cols'] = [
+        { wch: 5 },  { wch: 20 }, { wch: 30 }, { wch: 25 }, 
+        { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 30 }
+      ];
+
+      XLSX.writeFile(workbook, `Bao_Cao_Nhap_Kho_${new Date().getTime()}.xlsx`);
+      toast.success('Xuất file Excel thành công!');
+    } catch (error) {
+      console.error("Lỗi xuất Excel:", error);
+      toast.error('Có lỗi xảy ra khi xuất Excel');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const dashboardStats = useMemo(() => {
     const pos = data?.content || [];
     let totalValue = 0;
@@ -142,10 +197,10 @@ export default function PurchaseOrdersPage() {
       const statusLabel = STATUS_LABELS[po.status] || po.status;
       
       if (!statusCount[statusLabel]) {
-        let color = '#94a3b8'; // DRAFT (Gray)
-        if (po.status === 'PENDING') color = '#f59e0b'; // Amber
-        if (po.status === 'COMPLETED') color = '#10b981'; // Emerald
-        if (po.status === 'CANCELLED') color = '#f43f5e'; // Rose
+        let color = '#94a3b8'; 
+        if (po.status === 'PENDING') color = '#f59e0b'; 
+        if (po.status === 'COMPLETED') color = '#10b981'; 
+        if (po.status === 'CANCELLED') color = '#f43f5e'; 
         statusCount[statusLabel] = { count: 0, color };
       }
       statusCount[statusLabel].count++;
@@ -170,17 +225,28 @@ export default function PurchaseOrdersPage() {
           <p className="text-sm text-slate-500 mt-1.5 font-medium">Theo dõi và tạo mới các phiếu nhập hàng từ Nhà cung cấp.</p>
         </div>
         
-        <button 
-          onClick={() => setShowCreateModal(true)} 
-          className="flex items-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-semibold shadow-[0_4px_12px_rgb(0,0,0,0.1)] transition-all"
-        >
-          <Plus className="w-5 h-5" /> Tạo phiếu nhập
-        </button>
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+          {/* ĐÃ THÊM: Nút Xuất Excel */}
+          <button 
+            onClick={handleExportExcel} 
+            disabled={isExporting || !data?.content?.length}
+            className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-6 py-3 rounded-xl font-bold transition-all shadow-sm disabled:opacity-50 flex-1 md:flex-none"
+          >
+            {isExporting ? <Spinner size="sm" /> : <Download className="w-4 h-4" />}
+            Xuất Excel
+          </button>
+
+          <button 
+            onClick={() => setShowCreateModal(true)} 
+            className="flex items-center justify-center gap-2 bg-slate-900 hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-semibold shadow-[0_4px_12px_rgb(0,0,0,0.1)] transition-all flex-1 md:flex-none"
+          >
+            <Plus className="w-5 h-5" /> Tạo phiếu nhập
+          </button>
+        </div>
       </div>
 
-      {/* ── MINI DASHBOARD (BỐ CỤC TỶ LỆ VÀNG) ── */}
+      {/* ── MINI DASHBOARD ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in">
-        {/* Card 1: Tổng số phiếu */}
         <div className="lg:col-span-4 bg-white p-6 rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 flex flex-col justify-center relative overflow-hidden group">
           <div className="absolute -right-6 -top-6 w-24 h-24 bg-indigo-50 rounded-full blur-2xl group-hover:bg-indigo-100 transition-colors duration-700"></div>
           <div className="relative z-10 flex items-center gap-4 mb-4">
@@ -198,7 +264,6 @@ export default function PurchaseOrdersPage() {
           </div>
         </div>
 
-        {/* Card 2: Biểu đồ trạng thái */}
         <div className="lg:col-span-8 bg-white p-6 rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 flex items-center gap-8">
           <div className="w-1/3 h-[120px] relative shrink-0">
             {dashboardStats.chartData.length > 0 ? (
@@ -246,6 +311,24 @@ export default function PurchaseOrdersPage() {
               />
             </div>
 
+            {/* ĐÃ THÊM: Bộ lọc chi nhánh (Chỉ Admin mới thấy) */}
+            {isAdmin() && (
+              <div className="relative w-full sm:w-56 shrink-0 group">
+                <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 group-focus-within:text-indigo-500 transition-colors" />
+                <select
+                  value={selectedWarehouseId}
+                  onChange={(e) => { setSelectedWarehouseId(e.target.value); setPage(0); }}
+                  className="w-full pl-11 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none cursor-pointer"
+                >
+                  <option value="">Tất cả chi nhánh</option>
+                  {warehouses?.map((w: any) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
+              </div>
+            )}
+
             <div className="relative w-full sm:w-56 shrink-0 group">
                <Filter className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 group-focus-within:text-indigo-500 transition-colors" />
                <select 
@@ -254,7 +337,6 @@ export default function PurchaseOrdersPage() {
                  onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}
                >
                  <option value="ALL">Tất cả trạng thái</option>
-                 <option value="DRAFT">Nháp</option>
                  <option value="PENDING">Chờ duyệt</option>
                  <option value="COMPLETED">Đã nhập kho</option>
                  <option value="CANCELLED">Đã hủy</option>
@@ -327,7 +409,6 @@ export default function PurchaseOrdersPage() {
                     <td className="px-6 py-4 text-right">
                       <div className="flex gap-1.5 justify-end items-center opacity-0 group-hover:opacity-100 transition-opacity">
                         
-                        {/* Nút Xem chi tiết */}
                         <button 
                           onClick={() => setViewingPoId(po.id)} 
                           className="p-1.5 rounded-lg flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-colors" 
@@ -336,8 +417,8 @@ export default function PurchaseOrdersPage() {
                           <Eye className="w-4 h-4" />
                         </button>
                         
-                        {/* Nút Duyệt phiếu */}
-                        {po.status === 'PENDING' && (isAdmin() || warehouseId() === po.warehouseId) && (
+                        {/* ĐÃ SỬA: Chỉ PENDING mới được duyệt */}
+                        {po.status === 'PENDING' && (isAdmin() || user?.warehouseId === po.warehouseId) && (
                           <button 
                             onClick={() => setConfirmApprove(po.id)} 
                             className="h-8 px-3 rounded-lg text-xs font-bold transition-colors flex items-center justify-center bg-emerald-50 text-emerald-700 border border-emerald-100/50 hover:bg-emerald-100 shadow-sm shrink-0" 
@@ -347,8 +428,8 @@ export default function PurchaseOrdersPage() {
                           </button>
                         )}
                         
-                        {/* Nút Hủy phiếu */}
-                        {(po.status === 'DRAFT' || po.status === 'PENDING') && (isAdmin() || warehouseId() === po.warehouseId) && (
+                        {/* ĐÃ SỬA: Chỉ PENDING mới được hủy */}
+                        {po.status === 'PENDING' && (isAdmin() || user?.warehouseId === po.warehouseId) && (
                           <button 
                             onClick={() => setCancelPoId(po.id)} 
                             className="p-1.5 rounded-lg flex items-center justify-center text-rose-500 hover:bg-rose-50 transition-colors shrink-0" 

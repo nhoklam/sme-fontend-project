@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { DollarSign, TrendingDown, TrendingUp, AlertCircle, Calendar, Search, Plus, X, CheckCircle, Download, Printer, History, Landmark, Banknote, Wallet, FileText, CreditCard, ChevronDown } from 'lucide-react';
+import { DollarSign, TrendingDown, TrendingUp, AlertCircle, Calendar, Search, Plus, X, CheckCircle, Download, Printer, History, Landmark, Banknote, Wallet, FileText, CreditCard, ChevronDown, Building2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { financeService } from '@/services/finance.service';
 import { warehouseService } from '@/services/warehouse.service';
@@ -59,6 +59,17 @@ function CashbookEntryModal({ onClose, onSaved }: { onClose: () => void, onSaved
     queryFn: () => warehouseService.getAll().then(r => r.data.data),
     enabled: isAdmin(),
   });
+
+  // [ĐÃ THÊM] Lấy số dư quỹ hiện tại để validate trước khi Chi tiền
+  const { data: modalBalance } = useQuery({
+    queryKey: ['cashbook-balance', form.warehouseId],
+    queryFn: () => financeService.getCashbookBalance(form.warehouseId).then(r => r.data.data),
+    enabled: !!form.warehouseId,
+  });
+
+  const currentBalance = modalBalance ? modalBalance[form.fundType] || 0 : 0;
+  const isOut = form.transactionType === 'OUT';
+  const isExceedingBalance = isOut && Number(form.amount) > currentBalance;
 
   const mut = useMutation({
     mutationFn: () => financeService.createCashbookEntry({
@@ -149,12 +160,25 @@ function CashbookEntryModal({ onClose, onSaved }: { onClose: () => void, onSaved
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Số tiền (VNĐ) <span className="text-rose-500">*</span></label>
             <input 
               type="number" 
-              className={`w-full bg-white border text-3xl font-black tracking-tight rounded-2xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 block p-5 transition-all outline-none shadow-inner ${form.transactionType === 'IN' ? 'text-emerald-600 border-emerald-100 focus:border-emerald-500 focus:ring-emerald-500/20' : 'text-rose-600 border-rose-100 focus:border-rose-500 focus:ring-rose-500/20'}`} 
+              className={`w-full bg-white border text-3xl font-black tracking-tight rounded-2xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 block p-5 transition-all outline-none shadow-inner ${form.transactionType === 'IN' ? 'text-emerald-600 border-emerald-100 focus:border-emerald-500 focus:ring-emerald-500/20' : isExceedingBalance ? 'text-rose-600 border-rose-500 focus:border-rose-500 focus:ring-rose-500/20 bg-rose-50' : 'text-rose-600 border-rose-100 focus:border-rose-500 focus:ring-rose-500/20'}`} 
               placeholder="Nhập số tiền..." 
               value={form.amount} 
               onChange={e => setForm({ ...form, amount: e.target.value })} 
               autoFocus
             />
+            {/* [ĐÃ THÊM] Thông báo và Validate Số dư khi Chi tiền */}
+            {form.warehouseId && isOut && (
+              <div className="mt-3 flex items-center justify-between text-sm px-2">
+                <span className="font-medium text-slate-600">
+                  Số dư hiện tại: <strong className="text-indigo-600 ml-1">{formatCurrency(currentBalance)}</strong>
+                </span>
+                {isExceedingBalance && (
+                  <span className="font-bold text-rose-600 flex items-center gap-1.5 bg-rose-100 px-3 py-1 rounded-lg border border-rose-200">
+                    <AlertCircle className="w-4 h-4"/> Quỹ không đủ tiền!
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           
           <div>
@@ -167,7 +191,8 @@ function CashbookEntryModal({ onClose, onSaved }: { onClose: () => void, onSaved
           <button onClick={onClose} className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">Hủy bỏ</button>
           <button 
             onClick={() => mut.mutate()} 
-            disabled={mut.isPending || !form.amount || !form.warehouseId || !form.description.trim()} 
+            // ĐÃ THÊM: Khóa nút nếu isExceedingBalance = true
+            disabled={mut.isPending || !form.amount || !form.warehouseId || !form.description.trim() || isExceedingBalance} 
             className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-[0_4px_12px_rgb(99,102,241,0.3)] disabled:opacity-50 disabled:shadow-none flex items-center justify-center min-w-[140px]"
           >
             {mut.isPending ? <Spinner size="sm" className="text-white"/> : 'Xác nhận tạo'}
@@ -188,6 +213,16 @@ function PayDebtModal({ debt, onClose, onSaved }: { debt: any, onClose: () => vo
     fundType: 'CASH_111',
     note: `Thanh toán công nợ PO: ${debt.purchaseOrderCode || debt.purchaseOrderId || ''}`,
   });
+
+  // [ĐÃ THÊM] Lấy số dư quỹ hiện tại để validate trước khi Trả nợ
+  const { data: modalBalance } = useQuery({
+    queryKey: ['cashbook-balance', debt.warehouseId],
+    queryFn: () => financeService.getCashbookBalance(debt.warehouseId).then(r => r.data.data),
+    enabled: !!debt.warehouseId,
+  });
+
+  const currentBalance = modalBalance ? modalBalance[form.fundType] || 0 : 0;
+  const isExceedingBalance = Number(form.amount) > currentBalance;
 
   const mut = useMutation({
     mutationFn: () => financeService.paySupplierDebt({
@@ -232,12 +267,23 @@ function PayDebtModal({ debt, onClose, onSaved }: { debt: any, onClose: () => vo
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Số tiền trả (VNĐ) <span className="text-rose-500">*</span></label>
             <input 
               type="number" 
-              className="w-full bg-white border border-slate-200 text-slate-900 text-2xl font-black tracking-tight rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 block p-4 transition-colors outline-none shadow-inner" 
+              className={`w-full bg-white border text-2xl font-black tracking-tight rounded-xl focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 block p-4 transition-colors outline-none shadow-inner ${isExceedingBalance ? 'border-rose-500 text-rose-600 bg-rose-50' : 'border-slate-200 text-slate-900'}`} 
               max={debt.remainingAmount} 
               value={form.amount} 
               onChange={e => setForm({ ...form, amount: e.target.value })} 
               autoFocus
             />
+            {/* [ĐÃ THÊM] Báo đỏ nếu quỹ không đủ */}
+            <div className="mt-3 flex items-center justify-between text-sm px-2">
+              <span className="font-medium text-slate-600">
+                Quỹ khả dụng: <strong className="text-indigo-600 ml-1">{formatCurrency(currentBalance)}</strong>
+              </span>
+              {isExceedingBalance && (
+                <span className="font-bold text-rose-600 flex items-center gap-1.5">
+                  Quỹ không đủ tiền!
+                </span>
+              )}
+            </div>
           </div>
 
           <div>
@@ -259,7 +305,8 @@ function PayDebtModal({ debt, onClose, onSaved }: { debt: any, onClose: () => vo
         
         <div className="px-8 py-5 border-t border-slate-100 bg-white flex justify-end gap-3 shrink-0 rounded-b-3xl">
           <button onClick={onClose} className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">Hủy bỏ</button>
-          <button onClick={() => mut.mutate()} disabled={mut.isPending || !form.amount || Number(form.amount) <= 0 || Number(form.amount) > debt.remainingAmount} className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-[0_4px_12px_rgb(99,102,241,0.3)] disabled:opacity-50 disabled:shadow-none flex items-center justify-center min-w-[150px]">
+          {/* ĐÃ SỬA: Thêm điều kiện khóa nút isExceedingBalance */}
+          <button onClick={() => mut.mutate()} disabled={mut.isPending || !form.amount || Number(form.amount) <= 0 || Number(form.amount) > debt.remainingAmount || isExceedingBalance} className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-[0_4px_12px_rgb(99,102,241,0.3)] disabled:opacity-50 disabled:shadow-none flex items-center justify-center min-w-[150px]">
             {mut.isPending ? <Spinner size="sm" className="text-white"/> : 'Xác nhận thanh toán'}
           </button>
         </div>
@@ -359,9 +406,14 @@ function DebtHistoryModal({ debt, onClose }: { debt: any, onClose: () => void })
 // ─────────────────────────────────────────────────────────────────
 export default function FinancePage() {
   const { warehouseId, isAdmin } = useAuthStore();
-  const wid = warehouseId() ?? '';
   const qc = useQueryClient(); 
   const PAGE_SIZE = 15;
+
+  // [ĐÃ THÊM] State để Admin chọn chi nhánh
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string>('');
+  
+  // Xác định WarehouseId thực tế sẽ dùng để gọi API
+  const effectiveWid = isAdmin() ? selectedWarehouseId : (warehouseId() ?? '');
 
   const [tab, setTab] = useState<'cashbook' | 'debts'>('cashbook');
   const [timeRange, setTimeRange] = useState<TimeRange>('month');
@@ -389,8 +441,8 @@ export default function FinancePage() {
   }, [keywordTxn]);
 
   // Reset trang khi đổi filter
-  useEffect(() => { setPageTxn(0); }, [debouncedKeywordTxn, filterFund, filterType, filterRef, timeRange]);
-  useEffect(() => { setPageDebt(0); }, [keywordDebt]);
+  useEffect(() => { setPageTxn(0); }, [debouncedKeywordTxn, filterFund, filterType, filterRef, timeRange, effectiveWid]);
+  useEffect(() => { setPageDebt(0); }, [keywordDebt, effectiveWid]);
 
   const { from, to } = useMemo(() => {
     const now = new Date();
@@ -406,26 +458,33 @@ export default function FinancePage() {
     return { from: start.toISOString(), to: end.toISOString() };
   }, [timeRange]);
 
+  // --- GỌI API LẤY DANH SÁCH CHI NHÁNH (DÀNH CHO ADMIN) ---
+  const { data: warehouses } = useQuery({
+    queryKey: ['warehouses-dict'],
+    queryFn: () => warehouseService.getAll().then(r => r.data.data),
+    enabled: isAdmin(),
+  });
+
   // --- GỌI API TỔNG QUAN ---
   const { data: balance } = useQuery({
-    queryKey: ['cashbook-balance', wid],
-    queryFn: () => financeService.getCashbookBalance(wid).then(r => r.data.data),
-    enabled: isAdmin() || !!wid, 
+    queryKey: ['cashbook-balance', effectiveWid],
+    queryFn: () => financeService.getCashbookBalance(effectiveWid).then(r => r.data.data),
+    enabled: isAdmin() || !!effectiveWid, 
     refetchInterval: 60_000,
   });
 
   // --- GỌI API LẤY ALL ĐỂ VẼ BIỂU ĐỒ ---
   const { data: allTransactions } = useQuery({
-    queryKey: ['cashbook-all', wid, from, to],
-    queryFn: () => financeService.getCashbook(wid, from, to).then(r => r.data.data),
-    enabled: (isAdmin() || !!wid) && tab === 'cashbook',
+    queryKey: ['cashbook-all', effectiveWid, from, to],
+    queryFn: () => financeService.getCashbook(effectiveWid, from, to).then(r => r.data.data),
+    enabled: (isAdmin() || !!effectiveWid) && tab === 'cashbook',
   });
 
   // API LẤY SỔ QUỸ (SERVER-SIDE PAGINATION)
   const { data: cashbookData, isLoading: loadingTxn, isRefetching: refetchingTxn } = useQuery({
-    queryKey: ['cashbook-search', wid, from, to, filterFund, filterType, filterRef, debouncedKeywordTxn, pageTxn],
+    queryKey: ['cashbook-search', effectiveWid, from, to, filterFund, filterType, filterRef, debouncedKeywordTxn, pageTxn],
     queryFn: () => financeService.searchCashbook({
-      warehouseId: wid,
+      warehouseId: effectiveWid,
       from,
       to,
       fundType: filterFund,
@@ -434,7 +493,7 @@ export default function FinancePage() {
       page: pageTxn,
       size: PAGE_SIZE
     }).then(r => r.data.data),
-    enabled: (isAdmin() || !!wid) && tab === 'cashbook',
+    enabled: (isAdmin() || !!effectiveWid) && tab === 'cashbook',
   });
 
   const paginatedTxn = cashbookData?.content || [];
@@ -443,8 +502,8 @@ export default function FinancePage() {
 
   // API CÔNG NỢ
   const { data: debts, isLoading: loadingDebts, isRefetching: refetchingDebts } = useQuery({
-    queryKey: ['supplier-debts', wid],
-    queryFn: () => financeService.getOutstandingDebts(wid).then(r => r.data.data),
+    queryKey: ['supplier-debts', effectiveWid],
+    queryFn: () => financeService.getOutstandingDebts(effectiveWid).then(r => r.data.data),
     enabled: tab === 'debts',
   });
 
@@ -522,7 +581,7 @@ export default function FinancePage() {
 
       if (tab === 'cashbook') {
         const res = await financeService.searchCashbook({
-          warehouseId: wid,
+          warehouseId: effectiveWid,
           from,
           to,
           fundType: filterFund,
@@ -607,7 +666,7 @@ export default function FinancePage() {
         <div class="header">
           <div>
             <strong>ĐƠN VỊ: HỆ THỐNG CỬA HÀNG</strong><br/>
-            <span>Mã chi nhánh: ${wid || 'Trung tâm'}</span>
+            <span>Mã chi nhánh: ${effectiveWid || 'Trung tâm'}</span>
           </div>
           <div style="text-align: right;">
             <strong>Mẫu số: 01-TT / 02-TT</strong><br/>
@@ -665,6 +724,22 @@ export default function FinancePage() {
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Tài chính & Công nợ</h1>
           <p className="text-sm text-slate-500 mt-1.5 font-medium">Theo dõi dòng tiền thu chi và quản lý công nợ Nhà cung cấp.</p>
         </div>
+        
+        {/* [ĐÃ THÊM] Dropdown chọn kho cho Admin */}
+        {isAdmin() && (
+          <div className="relative w-full sm:w-64 shrink-0 group">
+             <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 group-focus-within:text-indigo-500 transition-colors" />
+             <select
+               className="w-full pl-11 pr-10 py-3 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none cursor-pointer shadow-sm"
+               value={selectedWarehouseId}
+               onChange={(e) => setSelectedWarehouseId(e.target.value)}
+             >
+               <option value="">Toàn hệ thống (Mọi kho)</option>
+               {warehouses?.map((w: any) => <option key={w.id} value={w.id}>{w.name}</option>)}
+             </select>
+             <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
+          </div>
+        )}
       </div>
 
       {/* ── THẺ TỔNG QUAN TÀI CHÍNH ── */}

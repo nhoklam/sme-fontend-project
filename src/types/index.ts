@@ -1,3 +1,4 @@
+
 // ─────────────────────────────────────────────────────────────
 // STANDARD RESPONSE WRAPPERS
 // ─────────────────────────────────────────────────────────────
@@ -62,6 +63,14 @@ export interface ChangePasswordRequest {
   currentPassword: string;
   newPassword: string;
 }
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface ResetPasswordRequest {
+  token: string;
+  newPassword: string;
+}
 
 // ─────────────────────────────────────────────────────────────
 // WAREHOUSE
@@ -113,6 +122,8 @@ export interface Supplier {
   notes?: string;
   createdAt: string;
   updatedAt?: string;
+  createdBy?: string; // ĐÃ THÊM
+  updatedBy?: string; // ĐÃ THÊM
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -391,6 +402,7 @@ export interface CheckoutRequest {
     reference?: string;
   }>;
   pointsToUse?: number;
+  promotionCode?: string; // [Step 6] Mã khuyến mãi được áp dụng khi thanh toán
   note?: string;
 }
 
@@ -431,7 +443,7 @@ export interface OrderResponse {
   statusHistory?: OrderStatusHistoryResponse[];
 }
 
-export type OrderStatus = 'PENDING' | 'PACKING' | 'WAITING_FOR_CONSOLIDATION' | 'SHIPPING' | 'DELIVERED' | 'CANCELLED' | 'RETURNED';
+export type OrderStatus = 'WAITING_FOR_CONSOLIDATION' | 'PENDING' | 'CONFIRMED' | 'PACKED' | 'SHIPPING' | 'READY_FOR_PICKUP' | 'DELIVERED' | 'CANCELLED' | 'RETURNED';
 export type PaymentStatus = 'UNPAID' | 'PAID' | 'REFUNDED';
 
 export interface OrderItemResponse {
@@ -463,6 +475,9 @@ export interface CreateOrderRequest {
   type?: string;
   note?: string;
   assignedWarehouseId?: string;
+  shippingFee?: number;
+  promotionCode?: string;
+  pointsToUse?: number;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -554,6 +569,7 @@ export interface AiChatRequest {
 
 export interface AiChatResponse {
   reply: string;
+  sources: { title: string; excerpt: string }[];
 }
 
 // ─────────────────────────────────────────────────────────────

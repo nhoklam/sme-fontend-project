@@ -1,3 +1,4 @@
+
 import api from '@/lib/axios';
 import type { ApiResponse, AiChatRequest, AiChatResponse } from '@/types';
 
@@ -12,8 +13,13 @@ export interface KnowledgeDocument {
 }
 
 export const aiService = {
+  // ĐÃ SỬA: response giờ có thêm field "sources" (xem AiChatResponse trong types/index.ts)
   chat: (data: AiChatRequest) =>
     api.post<ApiResponse<AiChatResponse>>('/ai/chat', data),
+
+  // ĐÃ THÊM: câu hỏi gợi ý theo role (backend tự đọc role từ JWT)
+  getSuggestedQuestions: () =>
+    api.get<ApiResponse<string[]>>('/ai/suggested-questions'),
 
   searchSemantic: (query: string, topK = 5) =>
     api.get<ApiResponse<any[]>>('/ai/search', { params: { query, topK } }),

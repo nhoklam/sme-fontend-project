@@ -3,6 +3,7 @@ import { Search, Plus, Edit, Power, Trophy, Filter, Clock, Download, Upload, Use
 import { 
   PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer 
 } from 'recharts';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { customerService } from '@/services/customer.service';
 import type { Customer } from '@/types';
 import { CustomerModal } from '@/pages/CustomerModal';
@@ -31,17 +32,14 @@ const CustomTooltip = ({ active, payload }: any) => {
 };
 
 export default function CustomersPage() {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [isRefetching, setIsRefetching] = useState(false);
+  const qc = useQueryClient();
   
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [tierFilter, setTierFilter] = useState<string>(''); 
   const [isTopSpenders, setIsTopSpenders] = useState(false);
 
   const [page, setPage] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
-  const [totalElements, setTotalElements] = useState(0); 
   const size = 15; 
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -50,44 +48,38 @@ export default function CustomersPage() {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [historyCustomer, setHistoryCustomer] = useState<Customer | null>(null);
 
-  // === STATE PHỤC VỤ IMPORT EXCEL ===
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const fetchCustomers = async () => {
-    if (customers.length === 0) setLoading(true);
-    else setIsRefetching(true);
-    
-    try {
-      let response;
+  // Debounce tìm kiếm
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+      setPage(0);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // ĐÃ SỬA: Chuyển sang dùng useQuery thay vì useEffect gọi hàm thủ công
+  const { data: pagedData, isLoading, isRefetching } = useQuery({
+    queryKey: ['customers', debouncedSearch, tierFilter, page, isTopSpenders],
+    queryFn: async () => {
       if (isTopSpenders) {
-        response = await customerService.getTopSpenders({ page, size });
+        return customerService.getTopSpenders({ page, size }).then(r => r.data.data);
       } else {
-        response = await customerService.getAll({ 
-          keyword: searchTerm, 
+        return customerService.getAll({ 
+          keyword: debouncedSearch || undefined, 
           tier: tierFilter || undefined, 
           page, 
           size 
-        });
+        }).then(r => r.data.data);
       }
-      
-      setCustomers(response.data.data.content);
-      setTotalPages(response.data.data.totalPages);
-      setTotalElements(response.data.data.totalElements); 
-    } catch (error) {
-      console.error('Lỗi khi tải danh sách khách hàng:', error);
-    } finally {
-      setLoading(false);
-      setIsRefetching(false);
     }
-  };
+  });
 
-  useEffect(() => {
-    const delayDebounceFn = setTimeout(() => {
-      fetchCustomers();
-    }, 500);
-    return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm, tierFilter, page, isTopSpenders]);
+  const customers = pagedData?.content || [];
+  const totalPages = pagedData?.totalPages || 1;
+  const totalElements = pagedData?.totalElements || 0;
 
   const handleOpenModal = (customer?: Customer) => {
     setEditingCustomerId(customer?.id || null);
@@ -102,25 +94,34 @@ export default function CustomersPage() {
       await customerService.create(data);
       toast.success('Thêm khách hàng thành công!');
     }
-    fetchCustomers(); 
+    qc.invalidateQueries({ queryKey: ['customers'] });
+    setIsModalOpen(false);
   };
 
-  const handleToggleActive = async (customer: Customer) => {
+  const toggleMut = useMutation({
+    mutationFn: (customer: Customer) => customerService.update(customer.id, { isActive: !customer.isActive }),
+    onSuccess: (_, variables) => {
+      toast.success(`Đã ${variables.isActive ? 'khóa' : 'mở khóa'} khách hàng!`);
+      qc.invalidateQueries({ queryKey: ['customers'] });
+    },
+    onError: () => toast.error('Lỗi cập nhật trạng thái'),
+  });
+
+  const handleToggleActive = (customer: Customer) => {
     if (window.confirm(`Bạn có chắc muốn ${customer.isActive ? 'khóa' : 'mở khóa'} khách hàng này?`)) {
-      try {
-        await customerService.update(customer.id, { isActive: !customer.isActive });
-        toast.success(`Đã ${customer.isActive ? 'khóa' : 'mở khóa'} khách hàng!`);
-        fetchCustomers();
-      } catch (error) {
-        toast.error('Lỗi cập nhật trạng thái');
-      }
+      toggleMut.mutate(customer);
     }
   };
 
+  // ĐÃ SỬA: Thêm tierFilter và cột Giới tính vào Excel
   const handleExportExcel = async () => {
     try {
       toast.loading('Đang chuẩn bị dữ liệu xuất...', { id: 'export-excel' });
-      const response = await customerService.getAll({ size: 10000, keyword: searchTerm });
+      const response = await customerService.getAll({ 
+        size: 10000, 
+        keyword: debouncedSearch || undefined,
+        tier: tierFilter || undefined 
+      });
       const dataToExport = response.data.data.content || [];
 
       if (!dataToExport || dataToExport.length === 0) {
@@ -133,6 +134,7 @@ export default function CustomersPage() {
         'Tên Khách Hàng': cust.fullName,
         'Số Điện Thoại': cust.phoneNumber,
         'Email': cust.email || '',
+        'Giới Tính': cust.gender === 'MALE' ? 'Nam' : cust.gender === 'FEMALE' ? 'Nữ' : 'Khác',
         'Ngày Sinh': cust.dateOfBirth ? cust.dateOfBirth.substring(0, 10) : '',
         'Hạng Thẻ': cust.customerTier,
         'Tổng Chi Tiêu': cust.totalSpent || 0,
@@ -152,7 +154,6 @@ export default function CustomersPage() {
     }
   };
 
-  // === HÀM XỬ LÝ IMPORT EXCEL ===
   const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -168,7 +169,6 @@ export default function CustomersPage() {
         const wsname = wb.SheetNames[0];
         const data = XLSX.utils.sheet_to_json(wb.Sheets[wsname]);
 
-        // Map các cột Excel sang Object Payload cho API
         const bulkPayload = data.map((row: any) => ({
           fullName: String(row['Tên Khách Hàng'] || '').trim(),
           phoneNumber: row['Số Điện Thoại'] ? String(row['Số Điện Thoại']).trim() : undefined,
@@ -176,7 +176,7 @@ export default function CustomersPage() {
           address: row['Địa Chỉ'] ? String(row['Địa Chỉ']).trim() : undefined,
           gender: row['Giới Tính'] === 'Nam' ? 'MALE' : (row['Giới Tính'] === 'Nữ' ? 'FEMALE' : 'OTHER'),
           notes: row['Ghi chú'] ? String(row['Ghi chú']).trim() : undefined,
-        })).filter(item => item.fullName !== '' && item.phoneNumber); // Lọc bỏ dòng thiếu Tên hoặc SĐT
+        })).filter(item => item.fullName !== '' && item.phoneNumber);
 
         if (bulkPayload.length === 0) {
           toast.error('File Excel rỗng hoặc thiếu cột (Tên Khách Hàng, Số Điện Thoại).', { id: toastId });
@@ -185,7 +185,7 @@ export default function CustomersPage() {
 
         await customerService.importBulk(bulkPayload);
         toast.success(`Đã import thành công danh sách khách hàng mới.`, { id: toastId });
-        fetchCustomers(); // Tải lại danh sách Data Table
+        qc.invalidateQueries({ queryKey: ['customers'] });
       } catch (error) {
         console.error("Lỗi Import:", error);
         toast.error('Lỗi định dạng. Hãy tải file xuất mẫu để xem các cột chuẩn.', { id: toastId });
@@ -198,13 +198,12 @@ export default function CustomersPage() {
     reader.readAsBinaryString(file);
   };
 
-  // --- TÍNH TOÁN DATA CHO MINI DASHBOARD ---
   const dashboardStats = useMemo(() => {
     let totalSpent = 0;
     const tierCount: Record<string, { count: number, color: string, label: string }> = {
-      STANDARD: { count: 0, color: '#3b82f6', label: 'Tiêu chuẩn' }, // Blue
-      SILVER: { count: 0, color: '#94a3b8', label: 'Hạng Bạc' },     // Slate
-      GOLD: { count: 0, color: '#f59e0b', label: 'Hạng Vàng' },       // Amber
+      STANDARD: { count: 0, color: '#3b82f6', label: 'Tiêu chuẩn' }, 
+      SILVER: { count: 0, color: '#94a3b8', label: 'Hạng Bạc' },     
+      GOLD: { count: 0, color: '#f59e0b', label: 'Hạng Vàng' },       
     };
 
     customers.forEach(c => {
@@ -212,7 +211,7 @@ export default function CustomersPage() {
       if (tierCount[c.customerTier]) {
         tierCount[c.customerTier].count++;
       } else {
-        tierCount['STANDARD'].count++; // Fallback
+        tierCount['STANDARD'].count++; 
       }
     });
 
@@ -272,9 +271,8 @@ export default function CustomersPage() {
         </div>
       </div>
 
-      {/* ── MINI DASHBOARD (BỐ CỤC TỶ LỆ VÀNG) ── */}
+      {/* ── MINI DASHBOARD ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fade-in">
-        {/* Card 1: Tổng số phiếu */}
         <div className="lg:col-span-4 bg-white p-6 rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 flex flex-col justify-center relative overflow-hidden group">
           <div className="absolute -right-6 -top-6 w-24 h-24 bg-indigo-50 rounded-full blur-2xl group-hover:bg-indigo-100 transition-colors duration-700"></div>
           <div className="relative z-10 flex items-center gap-4 mb-4">
@@ -292,7 +290,6 @@ export default function CustomersPage() {
           </div>
         </div>
 
-        {/* Card 2: Biểu đồ trạng thái */}
         <div className="lg:col-span-8 bg-white p-6 rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 flex items-center gap-8">
           <div className="w-1/3 h-[120px] relative shrink-0">
             {dashboardStats.chartData.length > 0 ? (
@@ -323,10 +320,9 @@ export default function CustomersPage() {
         </div>
       </div>
 
-      {/* ── KHU VỰC BẢNG DỮ LIỆU & BỘ LỌC ── */}
+      {/* ── BẢNG DỮ LIỆU & BỘ LỌC ── */}
       <div className={`bg-white rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border overflow-hidden flex flex-col animate-fade-in transition-colors ${isTopSpenders ? 'border-amber-200' : 'border-slate-100'}`}>
         
-        {/* Toolbar */}
         <div className={`p-5 border-b flex flex-col lg:flex-row justify-between gap-4 transition-colors ${isTopSpenders ? 'border-amber-100 bg-amber-50/30' : 'border-slate-100 bg-white'}`}>
           <div className="flex flex-col sm:flex-row gap-4 w-full">
             <div className="relative flex-1 group min-w-[250px]">
@@ -384,9 +380,8 @@ export default function CustomersPage() {
           )}
         </div>
 
-        {/* Data Grid */}
         <div className="overflow-x-auto relative min-h-[400px]">
-          {isRefetching && !loading && (
+          {(isLoading || isRefetching) && (
             <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-20 flex items-center justify-center">
               <Spinner size="lg" className="text-indigo-600" />
             </div>
@@ -404,25 +399,19 @@ export default function CustomersPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50/80">
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="py-24 text-center">
-                    <Spinner size="lg" className="mx-auto text-indigo-600" />
-                  </td>
-                </tr>
-              ) : customers.length === 0 ? (
+              {customers.length === 0 && !isLoading ? (
                 <tr>
                   <td colSpan={6} className="py-24 text-center">
                     <EmptyState 
                       icon={Users} 
                       title="Không tìm thấy khách hàng nào" 
-                      description={isTopSpenders ? "Chưa có dữ liệu chi tiêu." : "Thử thay đổi từ khóa hoặc bộ lọc của bạn."} 
+                      description={isTopSpenders ? "Chưa có dữ liệu chi tiêu." : "Thay đổi từ khóa hoặc bộ lọc của bạn."} 
                     />
                   </td>
                 </tr>
               ) : (
                 customers.map((customer) => (
-                  <tr key={customer.id} className={`transition-colors group ${!customer.isActive ? 'bg-slate-50/30' : 'hover:bg-slate-50/80'}`}>
+                  <tr key={customer.id} className={`transition-colors group ${!customer.isActive ? 'opacity-60 bg-slate-50/40 grayscale-[20%]' : 'hover:bg-slate-50/80'}`}>
                     <td className="px-6 py-4">
                       <div className={`font-bold text-[14px] leading-snug ${!customer.isActive ? 'text-slate-400' : 'text-slate-900 group-hover:text-indigo-600 transition-colors'}`}>
                         {customer.fullName}
@@ -462,14 +451,14 @@ export default function CustomersPage() {
                       <span className={`inline-flex items-center justify-center px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-md border shadow-sm ${
                         customer.isActive 
                           ? 'bg-emerald-50 text-emerald-700 border-emerald-100/60' 
-                          : 'bg-rose-50 text-rose-700 border-rose-100/60'
+                          : 'bg-slate-100 text-slate-500 border-slate-200'
                       }`}>
                         {customer.isActive ? 'Hoạt động' : 'Đã khóa'}
                       </span>
                     </td>
                     
                     <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex justify-end gap-1.5 items-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <button 
                           onClick={() => { setHistoryCustomer(customer); setIsHistoryOpen(true); }} 
                           className="p-1.5 rounded-lg flex items-center justify-center text-blue-600 hover:bg-blue-50 transition-colors" 
@@ -493,7 +482,7 @@ export default function CustomersPage() {
                           }`} 
                           title={customer.isActive ? 'Khóa khách hàng' : 'Mở khóa khách hàng'}
                         >
-                          <Power className="w-4 h-4" />
+                          {customer.isActive ? <Power className="w-4 h-4" /> : <Power className="w-4 h-4" />}
                         </button>
                       </div>
                     </td>
@@ -504,8 +493,7 @@ export default function CustomersPage() {
           </table>
         </div>
 
-        {/* ── PAGINATION ── */}
-        {!loading && totalPages > 1 && (
+        {totalPages > 1 && (
           <div className={`border-t p-4 transition-colors ${isTopSpenders ? 'border-amber-100 bg-amber-50/30' : 'border-slate-100 bg-slate-50/50'}`}>
             <Pagination 
               page={page} 
@@ -518,7 +506,6 @@ export default function CustomersPage() {
         )}
       </div>
 
-      {/* ── MODALS ── */}
       <CustomerModal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
@@ -530,8 +517,7 @@ export default function CustomersPage() {
         onClose={() => setIsHistoryOpen(false)} 
         customer={historyCustomer} 
       />
-cu
-      {/* CSS Animation Slide */}
+
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes scaleIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
         .animate-scale-in { animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }

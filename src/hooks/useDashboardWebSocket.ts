@@ -20,8 +20,10 @@ export function useDashboardWebSocket({ warehouseId, enabled = true }: Options) 
 
       // ── Tồn kho thấp ────────────────────────────────────────
       case 'LOW_STOCK':
-        qc.invalidateQueries({ queryKey: ['low-stock-dashboard'] });
-        qc.invalidateQueries({ queryKey: ['report-summary'] });
+        qc.invalidateQueries({ queryKey: ['low-stock'] });
+        qc.invalidateQueries({ queryKey: ['dashboard-manager'] });
+        qc.invalidateQueries({ queryKey: ['admin-dashboard'] });
+        qc.invalidateQueries({ queryKey: ['dashboard-cashier'] });
         toast('⚠️ Cảnh báo tồn kho thấp — danh sách vừa cập nhật', {
           icon: '📦',
           duration: 4000,
@@ -31,8 +33,11 @@ export function useDashboardWebSocket({ warehouseId, enabled = true }: Options) 
 
       // ── Đơn hàng mới ────────────────────────────────────────
       case 'NEW_ORDER': {
-        qc.invalidateQueries({ queryKey: ['orders-pending-dashboard'] });
-        qc.invalidateQueries({ queryKey: ['top-products-dashboard'] });
+        qc.invalidateQueries({ queryKey: ['orders'] });
+        qc.invalidateQueries({ queryKey: ['revenue'] }); // Cập nhật chart
+        qc.invalidateQueries({ queryKey: ['dashboard-manager'] });
+        qc.invalidateQueries({ queryKey: ['admin-dashboard'] });
+        qc.invalidateQueries({ queryKey: ['dashboard-cashier'] });
         const code = (payload.orderCode as string) ?? 'Mới';
         toast.success(`🛒 Đơn hàng ${code} vừa được tạo`, { duration: 4000 });
         break;
@@ -40,7 +45,9 @@ export function useDashboardWebSocket({ warehouseId, enabled = true }: Options) 
 
       // ── Ca cần duyệt ─────────────────────────────────────────
       case 'SHIFT_PENDING_APPROVAL':
-        qc.invalidateQueries({ queryKey: ['pending-shifts-dashboard'] });
+        qc.invalidateQueries({ queryKey: ['pending-shifts'] });
+        qc.invalidateQueries({ queryKey: ['dashboard-manager'] });
+        qc.invalidateQueries({ queryKey: ['admin-dashboard'] });
         toast('🕐 Có ca làm việc mới chờ bạn duyệt', {
           icon: '👤',
           duration: 5000,
@@ -50,7 +57,9 @@ export function useDashboardWebSocket({ warehouseId, enabled = true }: Options) 
 
       // ── Chuyển kho đến ──────────────────────────────────────
       case 'TRANSFER_ARRIVED':
-        qc.invalidateQueries({ queryKey: ['low-stock-dashboard'] });
+        qc.invalidateQueries({ queryKey: ['transfers'] });
+        qc.invalidateQueries({ queryKey: ['low-stock'] });
+        qc.invalidateQueries({ queryKey: ['dashboard-manager'] });
         toast('📦 Hàng chuyển kho vừa đến nơi', {
           duration: 3000,
           style: { background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' },

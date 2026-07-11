@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom'; // <-- ĐÃ THÊM IMPORT NÀY
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   Plus, Search, Edit, Package, Eye, EyeOff, ImagePlus, Filter, 
@@ -163,9 +164,10 @@ function ProductForm({ product, onClose, onSaved, categories }: { product?: Prod
     }
   };
 
-  return (
+  // ĐÃ SỬA: Đưa nội dung Modal vào createPortal để che phủ 100% màn hình
+  const modalContent = (
     <>
-      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4 transition-opacity">
+      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[90] flex items-center justify-center p-4 transition-opacity">
         <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col animate-scale-in border border-slate-100 overflow-hidden">
           
           {/* Header Modal */}
@@ -266,6 +268,12 @@ function ProductForm({ product, onClose, onSaved, categories }: { product?: Prod
                    <div>
                      <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 block">Giá sỉ (Tùy chọn)</label>
                      <input type="number" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-teal-600 focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all" value={form.wholesalePrice} onChange={e => f('wholesalePrice', e.target.value)} />
+                     {/* [FIX 3] Cảnh báo UX khi Giá sỉ >= Giá lẻ */}
+                     {Number(form.wholesalePrice) >= Number(form.retailPrice) && Number(form.retailPrice) > 0 && (
+                       <p className="text-[11px] text-amber-600 font-medium mt-1.5 flex items-center gap-1">
+                         <AlertCircle className="w-3 h-3" /> Giá sỉ đang cao hoặc bằng Giá lẻ
+                       </p>
+                     )}
                    </div>
                  </div>
 
@@ -335,6 +343,8 @@ function ProductForm({ product, onClose, onSaved, categories }: { product?: Prod
       )}
     </>
   );
+
+  return createPortal(modalContent, document.body);
 }
 
 // ==========================================
@@ -583,7 +593,8 @@ export default function ProductsPage() {
                 <th className="px-6 py-5">Mã ISBN / SKU</th>
                 <th className="px-6 py-5">Thể loại & NXB</th>
                 <th className="px-6 py-5 text-right">Giá bán (VNĐ)</th>
-                <th className="px-6 py-5 text-right">Tồn kho</th>
+                {/* [FIX 3] Đổi tên cột Tồn kho */}
+                <th className="px-6 py-5 text-right" title="Tổng tồn kho khả dụng trên toàn hệ thống">Tồn kho (Toàn chuỗi)</th>
                 <th className="px-6 py-5 text-center w-36">Thao tác</th>
               </tr>
             </thead>
@@ -679,10 +690,10 @@ export default function ProductsPage() {
       </div>
 
       {/* CHI TIẾT SẢN PHẨM */}
-      {viewingProduct && (
+      {viewingProduct && createPortal(
         <>
-          <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-40 transition-opacity" onClick={() => setViewingProduct(null)} />
-          <div className="fixed inset-y-0 right-0 w-full max-w-md bg-[#fcfcfd] shadow-2xl z-50 flex flex-col border-l border-slate-100 animate-slide-in-right">
+          <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-sm z-[80] transition-opacity" onClick={() => setViewingProduct(null)} />
+          <div className="fixed inset-y-0 right-0 w-full max-w-md bg-[#fcfcfd] shadow-2xl z-[90] flex flex-col border-l border-slate-100 animate-slide-in-right">
             
             <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-white/90 backdrop-blur-md sticky top-0 z-10">
               <h2 className="text-xl font-bold text-slate-900 tracking-tight">Hồ sơ Sách</h2>
@@ -742,8 +753,10 @@ export default function ProductsPage() {
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Tồn kho</p>
                   <p className="text-2xl font-black text-slate-900">{viewingProduct.availableQuantity || 0} <span className="text-sm font-semibold text-slate-500 ml-0.5">{viewingProduct.unit || 'Cuốn'}</span></p>
                   <div className="mt-auto pt-3 border-t border-slate-50 space-y-1.5">
-                    <p className="text-[11px] text-slate-500 flex justify-between"><span>Chờ giao:</span> <span className="font-bold text-slate-700">0</span></p>
-                    <p className="text-[11px] text-slate-500 flex justify-between"><span>Đang nhập:</span> <span className="font-bold text-indigo-600">0</span></p>
+                    {/* [FIX 1] Xóa Fake Data và thêm ghi chú */}
+                    <p className="text-[11px] text-slate-500 italic leading-relaxed">
+                      * Đây là tổng tồn khả dụng trên toàn hệ thống. Để xem chi tiết tồn kho tại từng chi nhánh, vui lòng sang trang Quản lý Kho.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -778,7 +791,8 @@ export default function ProductsPage() {
             </div>
 
           </div>
-        </>
+        </>,
+        document.body
       )}
 
       {/* MODAL ĐIỀU CHỈNH TỒN KHO NHANH */}

@@ -1,16 +1,16 @@
 import React, { useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
-import { X, Package, Info, Clock, MapPin, Printer, ShoppingBag, ArrowLeftRight } from 'lucide-react';
+import { X, Package, Info, Clock, MapPin, Printer, ShoppingBag, ArrowLeftRight, User } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import { transferService } from '@/services/transfer.service';
 import { warehouseService } from '@/services/warehouse.service';
 import { productService } from '@/services/product.service';
+import { authService } from '@/services/auth.service';
 import { formatDateTime } from '@/lib/utils';
 import { Spinner } from '@/components/ui';
 import { TransferPrintTemplate } from './TransferPrintTemplate';
 
-// Tiện ích map trạng thái
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   DRAFT: { label: 'Nháp', className: 'bg-slate-100 text-slate-600 border-slate-200' },
   DISPATCHED: { label: 'Đang vận chuyển', className: 'bg-amber-50 text-amber-700 border-amber-200' },
@@ -24,30 +24,32 @@ interface Props {
 }
 
 export function TransferDetailsModal({ transferId, onClose }: Props) {
-  // === HOOK CHO TÍNH NĂNG IN ===
   const printRef = useRef<HTMLDivElement>(null);
   const handlePrint = useReactToPrint({
     contentRef: printRef,
     documentTitle: `Phieu_Chuyen_Kho_${transferId}`,
   });
 
-  // 1. Lấy chi tiết phiếu chuyển
   const { data: transfer, isLoading } = useQuery({
     queryKey: ['transfer-detail', transferId],
     queryFn: () => transferService.getById(transferId).then(r => r.data.data),
     enabled: !!transferId,
   });
 
-  // 2. Lấy danh sách chi nhánh để map tên
   const { data: warehouses } = useQuery({
     queryKey: ['warehouses-dict'],
     queryFn: () => warehouseService.getAll().then(r => r.data.data),
   });
 
-  // 3. Lấy danh sách sản phẩm để map tên
   const { data: products } = useQuery({
     queryKey: ['products-dict'],
     queryFn: () => productService.getProducts({ size: 1000 }).then(r => r.data.data.content),
+  });
+
+  // ĐÃ THÊM: Fetch danh sách Users để lấy tên người tạo/nhận
+  const { data: users } = useQuery({
+    queryKey: ['users-dict'],
+    queryFn: () => authService.getUsers().then(r => r.data.data),
   });
 
   const warehouseMap = useMemo(() => {
@@ -62,6 +64,12 @@ export function TransferDetailsModal({ transferId, onClose }: Props) {
     return map;
   }, [products]);
 
+  const userMap = useMemo(() => {
+    const map = new Map<string, string>();
+    users?.forEach((u: any) => map.set(u.id, u.fullName));
+    return map;
+  }, [users]);
+
   if (isLoading || !transfer) {
     return createPortal(
       <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm transition-all">
@@ -73,11 +81,7 @@ export function TransferDetailsModal({ transferId, onClose }: Props) {
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 sm:p-6 transition-all">
-      
-      {/* ── KHUNG VIỀN TRẮNG 1CM BAO NGOÀI ── */}
       <div className="bg-white rounded-[24px] shadow-2xl w-full max-w-5xl flex flex-col max-h-[95vh] animate-slide-up p-3 md:p-4">
-        
-        {/* ── NỘI DUNG MODAL (Nằm lọt lòng trong khung trắng) ── */}
         <div className="rounded-xl overflow-hidden flex flex-col flex-1 border border-slate-100 bg-slate-50/30 relative">
           
           {/* ── HEADER ── */}
@@ -150,33 +154,43 @@ export function TransferDetailsModal({ transferId, onClose }: Props) {
                   </div>
                 </div>
 
-                {/* Thời gian */}
+                {/* Thời gian & Người phụ trách */}
                 <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)]">
                   <h3 className="font-bold text-slate-900 flex items-center gap-2 border-b border-slate-50 pb-3 mb-4">
                     <div className="p-1.5 bg-amber-100 text-amber-600 rounded-lg"><Clock className="w-4 h-4" /></div>
-                    Thời gian (Tracking)
+                    Thời gian & Trách nhiệm
                   </h3>
                   <div className="space-y-4">
-                    <div className="flex justify-between items-center">
+                    <div className="flex justify-between items-start">
                       <span className="text-sm font-medium text-slate-500">Ngày tạo phiếu</span>
-                      <span className="text-sm font-bold text-slate-800">{formatDateTime(transfer.createdAt)}</span>
+                      <div className="text-right">
+                        <span className="text-sm font-bold text-slate-800 block">{formatDateTime(transfer.createdAt)}</span>
+                        {/* ĐÃ THÊM: Người tạo */}
+                        <span className="text-[10px] text-slate-400 font-medium flex items-center justify-end gap-1 mt-0.5"><User className="w-3 h-3"/> {userMap.get(transfer.createdByUserId) || 'Hệ thống'}</span>
+                      </div>
                     </div>
                     
                     {transfer.dispatchedAt && (
-                      <div className="flex justify-between items-center pt-4 border-t border-slate-50">
+                      <div className="flex justify-between items-start pt-4 border-t border-slate-50">
                         <span className="text-sm font-medium text-slate-500">Thời gian xuất kho</span>
-                        <span className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2.5 py-1.5 rounded-lg">
-                          {formatDateTime(transfer.dispatchedAt)}
-                        </span>
+                        <div className="text-right">
+                           <span className="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2.5 py-1.5 rounded-lg inline-block">
+                             {formatDateTime(transfer.dispatchedAt)}
+                           </span>
+                        </div>
                       </div>
                     )}
 
                     {transfer.receivedAt && (
-                      <div className="flex justify-between items-center pt-4 border-t border-slate-50">
+                      <div className="flex justify-between items-start pt-4 border-t border-slate-50">
                         <span className="text-sm font-medium text-slate-500">Thời gian nhận</span>
-                        <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-1.5 rounded-lg">
-                          {formatDateTime(transfer.receivedAt)}
-                        </span>
+                        <div className="text-right">
+                           <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-1.5 rounded-lg inline-block">
+                             {formatDateTime(transfer.receivedAt)}
+                           </span>
+                           {/* ĐÃ THÊM: Người nhận */}
+                           <span className="text-[10px] text-slate-400 font-medium flex items-center justify-end gap-1 mt-1.5"><User className="w-3 h-3"/> {userMap.get(transfer.receivedByUserId) || 'Hệ thống'}</span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -292,6 +306,7 @@ export function TransferDetailsModal({ transferId, onClose }: Props) {
               transfer={transfer} 
               warehouses={warehouses || []} 
               products={products || []}
+              users={users || []}
             />
           </div>
 

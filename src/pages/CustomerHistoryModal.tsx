@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { X, Store, Globe, Clock, CheckCircle, Receipt, ShoppingBag } from 'lucide-react';
 import { customerService } from '@/services/customer.service';
 import type { Customer } from '@/types';
@@ -15,42 +16,27 @@ export const CustomerHistoryModal: React.FC<CustomerHistoryModalProps> = ({
   onClose,
   customer,
 }) => {
-  const [history, setHistory] = useState<{ invoices: any[]; orders: any[] }>({ invoices: [], orders: [] });
-  const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'POS' | 'ONLINE'>('POS');
-
   const [page, setPage] = useState(0);
-  const PAGE_SIZE = 6; // Tăng lên 6 dòng cho cân đối layout mới
+  const PAGE_SIZE = 6;
 
-  useEffect(() => {
-    if (isOpen && customer) {
-      fetchHistory();
-      setPage(0);
-    }
-  }, [isOpen, customer]);
-
+  // Reset page khi đổi tab
   useEffect(() => {
     setPage(0);
   }, [activeTab]);
 
-  const fetchHistory = async () => {
-    setLoading(true);
-    try {
-      const res = await customerService.getHistory(customer!.id);
-      setHistory(res.data.data);
-    } catch (error) {
-      console.error('Lỗi khi tải lịch sử:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ĐÃ SỬA: Dùng useQuery để fetch data, tự động truyền page và size xuống Backend
+  const { data: historyData, isLoading } = useQuery({
+    queryKey: ['customer-history', customer?.id, page],
+    queryFn: () => customerService.getHistory(customer!.id, { page, size: PAGE_SIZE }).then(r => r.data.data),
+    enabled: isOpen && !!customer,
+  });
 
   if (!isOpen || !customer) return null;
 
-  const currentList = activeTab === 'POS' ? history.invoices : history.orders;
-  const totalElements = currentList.length;
-  const totalPages = Math.ceil(totalElements / PAGE_SIZE);
-  const paginatedList = currentList.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const currentList = activeTab === 'POS' ? (historyData?.invoices || []) : (historyData?.orders || []);
+  const totalPages = activeTab === 'POS' ? (historyData?.invoicesTotalPages || 0) : (historyData?.ordersTotalPages || 0);
+  const totalElements = activeTab === 'POS' ? (historyData?.invoicesTotalElements || 0) : (historyData?.ordersTotalElements || 0);
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 transition-all">
@@ -89,7 +75,6 @@ export const CustomerHistoryModal: React.FC<CustomerHistoryModalProps> = ({
             }`}
           >
             <Store className="w-4 h-4" /> Tại quầy (POS) 
-            <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === 'POS' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-600'}`}>{history.invoices.length}</span>
           </button>
           <button
             onClick={() => setActiveTab('ONLINE')}
@@ -100,13 +85,12 @@ export const CustomerHistoryModal: React.FC<CustomerHistoryModalProps> = ({
             }`}
           >
             <Globe className="w-4 h-4" /> Đặt Online
-            <span className={`px-2 py-0.5 rounded-md text-[10px] ${activeTab === 'ONLINE' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-600'}`}>{history.orders.length}</span>
           </button>
         </div>
 
         {/* ── NỘI DUNG BẢNG ── */}
         <div className="p-6 md:p-8 overflow-y-auto flex-1 custom-scrollbar bg-slate-50/30">
-          {loading ? (
+          {isLoading ? (
             <div className="flex flex-col items-center justify-center py-20 text-slate-400">
               <Spinner size="lg" className="text-indigo-600 mb-4" />
               <p className="font-medium animate-pulse">Đang truy xuất lịch sử giao dịch...</p>
@@ -123,7 +107,7 @@ export const CustomerHistoryModal: React.FC<CustomerHistoryModalProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50/80">
-                  {paginatedList.map((item, index) => (
+                  {currentList.map((item: any, index: number) => (
                     <tr key={index} className="hover:bg-slate-50/80 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">

@@ -5,7 +5,7 @@ import {
   TrendingUp, MessageSquare, Send, X, Bot, CheckCircle, ChevronRight, Clock,
   Banknote, Landmark, Wallet, Trophy, CreditCard, UserCheck,
   History, Building2, PackageOpen, ShoppingCart, AlertTriangle, FileText,
-  Activity, Sparkles, User
+  Activity, Sparkles, User, ShoppingBag
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, ComposedChart, Line } from 'recharts';
 import { format, subDays, startOfDay, subMonths, startOfYear } from 'date-fns';
@@ -15,12 +15,15 @@ import { reportService } from '@/services/report.service';
 import { posService } from '@/services/pos.service';
 import { financeService } from '@/services/finance.service';
 import { adminService } from '@/services/admin.service';
+import { dashboardService } from '@/services/dashboard.service'; 
 import { warehouseService } from '@/services/warehouse.service';
 import { aiService } from '@/services/ai.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { PageLoader } from '@/components/ui';
 import { useDashboardWebSocket } from '@/hooks/useDashboardWebSocket';
+import { AlertBranchesWidget, BranchRevenueWidget } from '@/components/dashboard/AdminBranchWidget'; 
+import CashierDashboardView from '@/components/dashboard/CashierDashboardView'; // [FIX 1] Import giao diện Cashier
 
 type TimeFilter = '7d' | '30d' | '3m' | 'thisYear';
 
@@ -189,9 +192,25 @@ function AIChatPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ── COMPONENT KPI CARD CHUẨN ──────────────────────────────────
+function KPICard({ title, value, subLabel, icon: Icon, color, bg, ring, subColor }: any) {
+  return (
+    <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] flex items-center gap-4 transition-all hover:shadow-lg hover:-translate-y-1 relative overflow-hidden group">
+      <div className={`p-3.5 rounded-xl ${bg} ${color} ring-4 ${ring} transition-transform group-hover:scale-110 shrink-0`}>
+        <Icon className="w-6 h-6" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[13px] font-semibold text-slate-500 truncate mb-1">{title}</p>
+        <h3 className="text-base lg:text-lg font-black tracking-tight text-slate-900 truncate">{value}</h3>
+        {subLabel && <span className={`inline-block mt-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold ${subColor || 'text-slate-500 bg-slate-100'}`}>{subLabel}</span>}
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════
 export default function DashboardPage() {
-  const { user, isCashier, isAdmin } = useAuthStore();
+  const { user, isCashier, isAdmin, isManager } = useAuthStore();
   const qc = useQueryClient();
   const isStaff = isCashier();
 
@@ -229,27 +248,37 @@ export default function DashboardPage() {
     enabled: isAdmin(),
   });
 
-  // Lợi nhuận gộp & Doanh thu 
+  // [FIX 2] Tận dụng API Manager Dashboard
+  const { data: managerDashboard } = useQuery({
+    queryKey: ['dashboard-manager'],
+    queryFn: () => dashboardService.getManagerDashboard().then(r => r.data.data),
+    enabled: isManager(),
+    refetchInterval: 60_000,
+  });
+
+  // [FIX 3] Admin Dashboard
+  const { data: adminDashboard } = useQuery({
+    queryKey: ['admin-dashboard'],
+    queryFn: () => dashboardService.getAdminDashboard().then(r => r.data.data),
+    enabled: isAdmin(),
+    refetchInterval: 60_000,
+  });
+
+  // Lợi nhuận gộp & Doanh thu (Dùng cho biểu đồ)
   const { data: revenueData, isLoading: loadingRevenue } = useQuery({
     queryKey: ['revenue', timeFilter, queryWarehouseId],
     queryFn: () => reportService.getRevenue({ ...dateRange, warehouseId: queryWarehouseId }).then(r => r.data.data),
     enabled: !isStaff,
   });
 
-  // Giá trị tồn kho
-  const { data: inventoryValueData } = useQuery({
-    queryKey: ['inventory-value', queryWarehouseId],
-    queryFn: () => reportService.getInventoryValue(queryWarehouseId).then(r => r.data.data),
-    enabled: !isStaff,
-  });
-
-  // Hàng tồn đọng
+  // Hàng tồn đọng (Dùng cho bảng)
   const { data: deadStockList } = useQuery({
     queryKey: ['dead-stock', queryWarehouseId],
     queryFn: () => reportService.getDeadStock({ days: 90, warehouseId: queryWarehouseId }).then(r => Array.isArray(r.data?.data) ? r.data.data : []),
     enabled: !isStaff,
   });
 
+  // Top sản phẩm (Dùng cho bảng)
   const { data: topProducts } = useQuery({
     queryKey: ['top-products', timeFilter, queryWarehouseId],
     queryFn: () => reportService.getTopProducts({ ...dateRange, limit: 10, warehouseId: queryWarehouseId }).then(r => r.data.data),
@@ -280,7 +309,7 @@ export default function DashboardPage() {
 
   const { data: auditLogs } = useQuery({
     queryKey: ['audit-logs'],
-    queryFn: () => adminService.getAuditLogs(10).then(r => r.data.data),
+    queryFn: () => adminService.getAuditLogs({ size: 10 }).then(r => r.data.data.content),
     enabled: !isStaff && isAdmin(),
   });
 
@@ -290,23 +319,13 @@ export default function DashboardPage() {
       toast.success('Đã duyệt ca thành công');
       qc.invalidateQueries({ queryKey: ['pending-shifts'] });
       qc.invalidateQueries({ queryKey: ['cash-balance'] });
+      qc.invalidateQueries({ queryKey: ['dashboard-manager'] });
     } catch (e) { toast.error('Lỗi khi duyệt ca'); }
   };
 
   if (loadingRevenue && !isStaff) return <PageLoader />;
 
-  // Xử lý data KPI
-  const totalRevenue = (revenueData ?? []).reduce((s: number, d: any) => s + Number(d.revenue ?? 0), 0);
-  const totalGrossProfit = (revenueData ?? []).reduce((s: number, d: any) => s + Number(d.gross_profit ?? 0), 0);
-  const margin = totalRevenue > 0 ? ((totalGrossProfit / totalRevenue) * 100).toFixed(1) : '0.0';
-  const totalOrders = (revenueData ?? []).reduce((s: number, d: any) => s + Number(d.invoice_count ?? 0), 0);
-  
-  const safeInventoryData = Array.isArray(inventoryValueData) ? inventoryValueData : [];
-  const totalInvValue = safeInventoryData.reduce((sum, item) => sum + Number(item.total_value ?? 0), 0);
-
-  // Tính tổng quỹ cục bộ
-  const totalFund = (cashBalance?.CASH_111 || 0) + (cashBalance?.BANK_112 || 0);
-
+  // Xử lý data cho biểu đồ
   const chartData = (revenueData ?? []).map((d: any) => {
     let nameFormat = 'dd/MM';
     if (dateRange.period === 'month') nameFormat = 'MM/yyyy';
@@ -323,8 +342,6 @@ export default function DashboardPage() {
     name: String(d.name ?? 'SP').substring(0, 30) + (String(d.name).length > 30 ? '...' : ''),
     'Số lượng': Number(d.total_sold ?? 0),
   }));
-
-  console.info("React DevTools message can be safely ignored in production.");
 
   return (
     <div className="space-y-6 animate-fade-in pb-12 max-w-[1600px] mx-auto relative">
@@ -364,39 +381,78 @@ export default function DashboardPage() {
       </div>
 
       {isStaff ? (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-12 flex flex-col items-center justify-center text-center mt-6">
-          <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mb-6">
-            <UserCheck className="w-10 h-10 text-indigo-500" />
-          </div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Xin chào Thu ngân!</h2>
-          <p className="text-slate-500 mb-8 max-w-md">Bạn đang đăng nhập với quyền thu ngân. Chuyển đến màn hình bán hàng để bắt đầu ca làm việc.</p>
-          <Link to="/pos" className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold inline-flex items-center px-8 py-3 rounded-xl transition-all shadow-md shadow-indigo-600/20 hover:-translate-y-0.5">
-            Vào Màn hình Bán hàng (POS) <ChevronRight className="w-5 h-5 ml-2" />
-          </Link>
+        <div className="mt-6">
+          <CashierDashboardView />
         </div>
       ) : (
         <>
-          {/* ── DÀN THẺ KPI ── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-            {[
-              { label: 'Doanh thu', value: formatCurrency(totalRevenue), icon: Wallet, color: 'text-indigo-600', bg: 'bg-indigo-50', ring: 'ring-indigo-100' },
-              { label: 'Lợi nhuận gộp', value: formatCurrency(totalGrossProfit), subLabel: `Biên LN: ${margin}%`, icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50', ring: 'ring-emerald-100', subColor: 'text-emerald-600 bg-emerald-100/50' },
-              { label: 'Giá trị tồn kho', value: formatCurrency(totalInvValue), icon: PackageOpen, color: 'text-amber-600', bg: 'bg-amber-50', ring: 'ring-amber-100' },
-              { label: 'Đơn hoàn tất', value: totalOrders.toLocaleString('vi-VN'), icon: ShoppingCart, color: 'text-blue-600', bg: 'bg-blue-50', ring: 'ring-blue-100' },
-              { label: `Số dư quỹ ${queryWarehouseId ? '(Chi nhánh)' : '(Toàn bộ)'}`, value: formatCurrency(totalFund), icon: Landmark, color: 'text-purple-600', bg: 'bg-purple-50', ring: 'ring-purple-100' },
-            ].map((kpi, i) => (
-              <div key={i} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] flex items-center gap-4 transition-all hover:shadow-lg hover:-translate-y-1 relative overflow-hidden group">
-                <div className={`p-3.5 rounded-xl ${kpi.bg} ${kpi.color} ring-4 ${kpi.ring} transition-transform group-hover:scale-110 shrink-0`}>
-                  <kpi.icon className="w-6 h-6" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-semibold text-slate-500 truncate mb-1">{kpi.label}</p>
-                  <h3 className="text-base lg:text-lg font-black tracking-tight text-slate-900 truncate">{kpi.value}</h3>
-                  {kpi.subLabel && <span className={`inline-block mt-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold ${kpi.subColor}`}>{kpi.subLabel}</span>}
-                </div>
-              </div>
-            ))}
-          </div>
+          {/* ── DÀN THẺ KPI CHO MANAGER ── */}
+          {isManager() && managerDashboard && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <KPICard
+                title="Doanh thu hôm nay"
+                value={formatCurrency(managerDashboard.revenue.today)}
+                subLabel={`${managerDashboard.revenue.todayVsYesterdayPercent > 0 ? '+' : ''}${managerDashboard.revenue.todayVsYesterdayPercent.toFixed(1)}% so với hôm qua`}
+                icon={Wallet} color="text-indigo-600" bg="bg-indigo-50" ring="ring-indigo-100"
+                subColor={managerDashboard.revenue.todayVsYesterdayPercent >= 0 ? 'text-emerald-600 bg-emerald-100/50' : 'text-rose-600 bg-rose-100/50'}
+              />
+              <KPICard
+                title="Doanh thu tháng này"
+                value={formatCurrency(managerDashboard.revenue.thisMonth)}
+                subLabel={`${managerDashboard.revenue.monthVsLastMonthPercent > 0 ? '+' : ''}${managerDashboard.revenue.monthVsLastMonthPercent.toFixed(1)}% so với tháng trước`}
+                icon={TrendingUp} color="text-emerald-600" bg="bg-emerald-50" ring="ring-emerald-100"
+                subColor={managerDashboard.revenue.monthVsLastMonthPercent >= 0 ? 'text-emerald-600 bg-emerald-100/50' : 'text-rose-600 bg-rose-100/50'}
+              />
+              <KPICard
+                title="Đơn hàng chờ xử lý"
+                value={managerDashboard.orders.pendingConfirm + managerDashboard.orders.pendingPack}
+                subLabel={`${managerDashboard.orders.pendingConfirm} chờ xác nhận, ${managerDashboard.orders.pendingPack} chờ đóng gói`}
+                icon={ShoppingBag} color="text-amber-600" bg="bg-amber-50" ring="ring-amber-100"
+                subColor="text-amber-700 bg-amber-100/50"
+              />
+              <KPICard
+                title="Cần chú ý"
+                value={managerDashboard.pendingShifts.length + managerDashboard.lowStockCount + managerDashboard.upcomingDebts}
+                subLabel={`${managerDashboard.pendingShifts.length} ca chờ duyệt, ${managerDashboard.lowStockCount} SP sắp hết`}
+                icon={AlertTriangle} color="text-rose-600" bg="bg-rose-50" ring="ring-rose-100"
+                subColor="text-rose-700 bg-rose-100/50"
+              />
+            </div>
+          )}
+
+          {/* ── DÀN THẺ KPI CHO ADMIN ── */}
+          {isAdmin() && adminDashboard && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+              <KPICard
+                title="Doanh thu hôm nay (Toàn chuỗi)"
+                value={formatCurrency(adminDashboard.totalRevenue.today)}
+                icon={Wallet} color="text-indigo-600" bg="bg-indigo-50" ring="ring-indigo-100"
+              />
+              <KPICard
+                title="Doanh thu tháng này"
+                value={formatCurrency(adminDashboard.totalRevenue.thisMonth)}
+                icon={TrendingUp} color="text-emerald-600" bg="bg-emerald-50" ring="ring-emerald-100"
+              />
+              <KPICard
+                title="Đơn Online hôm nay"
+                value={adminDashboard.totalOnlineOrders.today.toLocaleString('vi-VN')}
+                icon={ShoppingCart} color="text-blue-600" bg="bg-blue-50" ring="ring-blue-100"
+              />
+              <KPICard
+                title="Tổng công nợ NCC"
+                value={formatCurrency(adminDashboard.totalSupplierDebt)}
+                icon={Landmark} color="text-rose-600" bg="bg-rose-50" ring="ring-rose-100"
+              />
+            </div>
+          )}
+
+          {/* ── WIDGET ADMIN: Cảnh báo chi nhánh + So sánh doanh thu ── */}
+          {isAdmin() && adminDashboard && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <AlertBranchesWidget branches={adminDashboard.alertBranches} />
+              <BranchRevenueWidget branches={adminDashboard.revenueByBranch} />
+            </div>
+          )}
 
           {/* ── BIỂU ĐỒ & BẢNG CHI TIẾT (TỶ LỆ VÀNG 2:1) ── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -565,7 +621,12 @@ export default function DashboardPage() {
              {/* Ca chờ duyệt */}
              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden flex flex-col h-[300px]">
                 <div className="p-4 border-b border-slate-50 flex justify-between items-center bg-slate-50/50 shrink-0">
-                  <h3 className="font-bold text-slate-900 flex items-center gap-2"><UserCheck className="w-4 h-4 text-purple-500" /> Ca chờ duyệt</h3>
+                  <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-purple-500" /> Ca chờ duyệt
+                    {isAdmin() && (
+                      <span className="text-[10px] font-medium text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">Toàn chuỗi</span>
+                    )}
+                  </h3>
                   <Link to="/pos" className="text-indigo-600 text-sm font-semibold hover:underline">Trang POS</Link>
                 </div>
                 <div className="divide-y divide-slate-50 flex-1 overflow-y-auto custom-scrollbar">
@@ -579,10 +640,17 @@ export default function DashboardPage() {
                       <div key={s.id} className="p-4 flex justify-between items-center hover:bg-slate-50 transition-colors group">
                         <div className="flex-1 min-w-0 pr-2">
                           <p className="text-sm font-bold text-slate-800 truncate group-hover:text-indigo-600 transition-colors">{s.cashierName ?? 'Thu ngân'}</p>
+                          {isAdmin() && s.warehouseName && (
+                            <p className="text-[10px] font-semibold text-indigo-500 mt-0.5">{s.warehouseName}</p>
+                          )}
                           <p className="text-xs font-medium text-slate-500 flex items-center gap-1 mt-1"><Clock className="w-3 h-3"/> {formatDateTime(s.closedAt ?? s.openedAt)}</p>
                           {s.discrepancyAmount !== 0 && <p className={`text-[10px] font-bold mt-2 inline-block px-2 py-0.5 rounded uppercase tracking-wider shadow-sm border ${s.discrepancyAmount > 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>Lệch: {formatCurrency(s.discrepancyAmount)}</p>}
                         </div>
-                        <button onClick={() => handleApproveShift(s.id)} className="h-8 px-4 rounded-lg text-xs font-bold transition-all shadow-sm shrink-0 bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white border border-purple-200 hover:border-transparent">Duyệt Ca</button>
+                        {!isAdmin() ? (
+                          <button onClick={() => handleApproveShift(s.id)} className="h-8 px-4 rounded-lg text-xs font-bold transition-all shadow-sm shrink-0 bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white border border-purple-200 hover:border-transparent">Duyệt Ca</button>
+                        ) : (
+                          <span className="text-[10px] text-slate-400 font-medium shrink-0 italic">Manager phụ trách</span>
+                        )}
                       </div>
                     ))
                   )}

@@ -1,3 +1,4 @@
+
 import api from '@/lib/axios';
 import type { ApiResponse, CashbookTransaction, CreateCashbookEntryRequest, SupplierDebt, PaySupplierDebtRequest, CodReconciliationResult } from '@/types';
 
@@ -23,8 +24,10 @@ export const financeService = {
       params: warehouseId ? { warehouseId } : {}
     }),
 
-  getTotalOutstandingBySupplier: (supplierId: string) =>
-    api.get<ApiResponse<number>>(`/finance/supplier-debts/supplier/${supplierId}/total`),
+  getTotalOutstandingBySupplier: (supplierId: string, warehouseId?: string) =>
+    api.get<ApiResponse<number>>(`/finance/supplier-debts/supplier/${supplierId}/total`, {
+      params: warehouseId ? { warehouseId } : undefined
+    }),
 
   paySupplierDebt: (data: PaySupplierDebtRequest) =>
     api.post<ApiResponse<SupplierDebt>>('/finance/supplier-debts/pay', data),

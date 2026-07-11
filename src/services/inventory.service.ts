@@ -1,3 +1,4 @@
+
 import api from '../lib/axios';
 import type { ApiResponse, PageResponse } from '@/types';
 
@@ -18,8 +19,11 @@ export interface InventoryResponse {
 }
 
 export const inventoryService = {
-  searchInventory: (warehouseId: string, params: { keyword?: string; categoryId?: string; status?: string; page: number; size: number }) =>
-    api.get<ApiResponse<PageResponse<InventoryResponse>>>(`/inventory/warehouse/${warehouseId}/search`, { params }),
+  searchInventory: (warehouseId: string, params: { keyword?: string; categoryId?: string; status?: string; page: number; size: number }) =>{
+    // THÊM DÒNG NÀY: Chặn gọi API nếu warehouseId bị rỗng
+    if (!warehouseId) return Promise.reject(new Error("warehouseId is required"));
+    return api.get<ApiResponse<PageResponse<InventoryResponse>>>(`/inventory/warehouse/${warehouseId}/search`, { params });
+  },
 
   getOne: (productId: string, wid: string) =>
     api.get<ApiResponse<InventoryResponse>>(`/inventory/${productId}/warehouse/${wid}`),
