@@ -1,8 +1,12 @@
-
 import api from '@/lib/axios';
-import type { ApiResponse, AiChatRequest, AiChatResponse } from '@/types';
+import type {
+  ApiResponse,
+  AiChatRequest,
+  AiChatResponse,
+  AiChatSessionSummary,
+  AiChatMessageDto,
+} from '@/types';
 
-// BỔ SUNG TYPE NÀY
 export interface KnowledgeDocument {
   id: string;
   title: string;
@@ -13,13 +17,22 @@ export interface KnowledgeDocument {
 }
 
 export const aiService = {
-  // ĐÃ SỬA: response giờ có thêm field "sources" (xem AiChatResponse trong types/index.ts)
+  // Request giờ gửi kèm sessionId (optional) thay vì conversationHistory
   chat: (data: AiChatRequest) =>
     api.post<ApiResponse<AiChatResponse>>('/ai/chat', data),
 
-  // ĐÃ THÊM: câu hỏi gợi ý theo role (backend tự đọc role từ JWT)
   getSuggestedQuestions: () =>
     api.get<ApiResponse<string[]>>('/ai/suggested-questions'),
+
+  // MỚI: quản lý lịch sử hội thoại (đoạn chat)
+  getSessions: () =>
+    api.get<ApiResponse<AiChatSessionSummary[]>>('/ai/sessions'),
+
+  getSessionMessages: (sessionId: string) =>
+    api.get<ApiResponse<AiChatMessageDto[]>>(`/ai/sessions/${sessionId}/messages`),
+
+  deleteSession: (sessionId: string) =>
+    api.delete<ApiResponse<void>>(`/ai/sessions/${sessionId}`),
 
   searchSemantic: (query: string, topK = 5) =>
     api.get<ApiResponse<any[]>>('/ai/search', { params: { query, topK } }),
@@ -33,7 +46,6 @@ export const aiService = {
     });
   },
 
-  // THÊM 2 DÒNG NÀY:
   getDocuments: () => api.get<ApiResponse<KnowledgeDocument[]>>('/ai/documents'),
   deleteDocument: (id: string) => api.delete<ApiResponse<void>>(`/ai/documents/${id}`),
   getDocumentChunks: (id: string) => api.get<ApiResponse<string[]>>(`/ai/documents/${id}/chunks`),

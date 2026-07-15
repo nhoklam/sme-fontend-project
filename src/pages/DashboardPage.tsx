@@ -1,11 +1,11 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type MouseEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   TrendingUp, MessageSquare, Send, X, Bot, CheckCircle, ChevronRight, Clock,
   Banknote, Landmark, Wallet, Trophy, CreditCard, UserCheck,
   History, Building2, PackageOpen, ShoppingCart, AlertTriangle, FileText,
-  Activity, Sparkles, User, ShoppingBag
+  Activity, Sparkles, User, ShoppingBag, Plus, Trash2
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, ComposedChart, Line } from 'recharts';
 import { format, subDays, startOfDay, subMonths, startOfYear } from 'date-fns';
@@ -23,6 +23,7 @@ import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { PageLoader } from '@/components/ui';
 import { AlertBranchesWidget, BranchRevenueWidget } from '@/components/dashboard/AdminBranchWidget'; 
 import CashierDashboardView from '@/components/dashboard/CashierDashboardView';
+import type { AiChatSessionSummary } from '@/types';
 
 type TimeFilter = '7d' | '30d' | '3m' | 'thisYear';
 
@@ -71,14 +72,78 @@ const TimeFilterGroup = ({ active, onChange }: { active: TimeFilter, onChange: (
 interface ChatMessage { role: 'user' | 'assistant'; content: string; ts: Date; }
 
 function AIChatPanel({ onClose }: { onClose: () => void }) {
+  const [sessions, setSessions] = useState<AiChatSessionSummary[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', content: 'Xin chào! Tôi là AI Co-pilot của hệ thống SME ERP. Tôi có thể giúp bạn phân tích dữ liệu kinh doanh, tra cứu chính sách, và trả lời các câu hỏi về nghiệp vụ. Bạn cần hỗ trợ gì hôm nay?', ts: new Date() }
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [initializing, setInitializing] = useState(true);
+  const [showHistory, setShowHistory] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+
+  // Nạp lại lịch sử khi mở panel / F5
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await aiService.getSessions();
+        const list = res.data.data;
+        setSessions(list);
+        if (list.length > 0) {
+          await loadSession(list[0].id);
+        }
+      } catch {
+        // Bỏ qua nếu lỗi
+      } finally {
+        setInitializing(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const loadSession = async (sessionId: string) => {
+    try {
+      const res = await aiService.getSessionMessages(sessionId);
+      const loaded = res.data.data.map(m => ({
+        role: m.role, content: m.content, ts: new Date(m.createdAt),
+      }));
+      setMessages(loaded.length > 0 ? loaded : [{ role: 'assistant', content: 'Xin chào! Tôi là AI Co-pilot...', ts: new Date() }]);
+      setCurrentSessionId(sessionId);
+    } catch {
+      toast.error('Không tải được đoạn chat này');
+    } finally {
+      setShowHistory(false);
+    }
+  };
+
+  const startNewChat = () => {
+    setCurrentSessionId(null);
+    setMessages([{ role: 'assistant', content: 'Bắt đầu đoạn chat mới. Bạn cần hỗ trợ gì?', ts: new Date() }]);
+    setShowHistory(false);
+  };
+
+  const handleDeleteSession = async (sessionId: string, e: MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Xóa đoạn chat này? Hành động không thể hoàn tác.')) return;
+    try {
+      await aiService.deleteSession(sessionId);
+      const remaining = sessions.filter(s => s.id !== sessionId);
+      setSessions(remaining);
+      if (sessionId === currentSessionId) {
+        if (remaining.length > 0) {
+          await loadSession(remaining[0].id);
+        } else {
+          startNewChat();
+        }
+      }
+      toast.success('Đã xóa đoạn chat');
+    } catch {
+      toast.error('Xóa đoạn chat thất bại');
+    }
+  };
 
   const send = async () => {
     if (!input.trim() || loading) return;
@@ -87,9 +152,13 @@ function AIChatPanel({ onClose }: { onClose: () => void }) {
     setMessages(prev => [...prev, { role: 'user', content: userMsg, ts: new Date() }]);
     setLoading(true);
     try {
-      const history = messages.slice(-6).map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n');
-      const res = await aiService.chat({ message: userMsg, conversationHistory: history });
-      setMessages(prev => [...prev, { role: 'assistant', content: res.data.data.reply, ts: new Date() }]);
+      const res = await aiService.chat({ message: userMsg, sessionId: currentSessionId ?? undefined });
+      const { sessionId: returnedId, reply } = res.data.data;
+      setMessages(prev => [...prev, { role: 'assistant', content: reply, ts: new Date() }]);
+      if (returnedId !== currentSessionId) {
+        setCurrentSessionId(returnedId);
+        aiService.getSessions().then(r => setSessions(r.data.data)).catch(() => {});
+      }
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Xin lỗi, hệ thống AI đang bận. Vui lòng thử lại sau giây lát.', ts: new Date() }]);
     } finally { setLoading(false); }
@@ -103,7 +172,7 @@ function AIChatPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="fixed right-4 bottom-4 md:right-8 md:bottom-8 z-[99] flex flex-col w-[360px] md:w-[400px] h-[550px] md:h-[600px] bg-white rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] border border-slate-100 overflow-hidden animate-slide-up origin-bottom-right">
-      
+
       {/* Header Gradient Sang trọng */}
       <div className="px-5 py-4 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-800 flex items-center justify-between shrink-0 relative overflow-hidden">
         <div className="absolute top-[-20px] right-[-20px] w-32 h-32 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
@@ -116,44 +185,84 @@ function AIChatPanel({ onClose }: { onClose: () => void }) {
             <p className="text-indigo-100 text-[10px] font-bold tracking-widest uppercase mt-0.5">Trợ lý ảo SME ERP</p>
           </div>
         </div>
-        <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors relative z-10">
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1 relative z-10">
+          <button onClick={startNewChat} title="Đoạn chat mới"
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors">
+            <Plus className="w-4 h-4" />
+          </button>
+          <button onClick={() => setShowHistory(v => !v)} title="Lịch sử chat"
+            className={`w-8 h-8 flex items-center justify-center rounded-full text-white transition-colors ${showHistory ? 'bg-white/30' : 'bg-white/10 hover:bg-white/20'}`}>
+            <MessageSquare className="w-4 h-4" />
+          </button>
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
+      {/* Dropdown Lịch sử chat */}
+      {showHistory && (
+        <div className="absolute top-[68px] right-4 left-4 z-20 bg-white rounded-2xl shadow-xl border border-slate-100 max-h-[320px] overflow-y-auto custom-scrollbar">
+          {sessions.length === 0 ? (
+            <p className="text-center text-sm text-slate-400 py-6">Chưa có đoạn chat nào</p>
+          ) : (
+            sessions.map(s => (
+              <div key={s.id} onClick={() => loadSession(s.id)}
+                className={`flex items-center justify-between gap-2 px-4 py-3 border-b border-slate-50 last:border-0 cursor-pointer hover:bg-slate-50 transition-colors ${s.id === currentSessionId ? 'bg-indigo-50' : ''}`}>
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold text-slate-800 truncate">{s.title}</p>
+                  {s.lastMessageAt && (
+                    <p className="text-[11px] text-slate-400">{new Date(s.lastMessageAt).toLocaleDateString('vi-VN')}</p>
+                  )}
+                </div>
+                <button onClick={(e) => handleDeleteSession(s.id, e)} title="Xóa đoạn chat"
+                  className="shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-5 bg-slate-50/50 custom-scrollbar">
-        {messages.map((m, i) => (
-          <div key={i} className={`flex gap-3 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {m.role === 'assistant' && (
-              <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center shrink-0 border border-indigo-200 mt-1 shadow-sm">
-                <Bot className="w-4 h-4 text-indigo-600" />
+      <div className="flex-1 overflow-y-auto p-5 space-y-5 bg-slate-50/50 custom-scrollbar" onClick={() => showHistory && setShowHistory(false)}>
+        {initializing ? (
+          <div className="flex items-center justify-center h-full text-sm text-slate-400">Đang tải lịch sử hội thoại...</div>
+        ) : (
+          <>
+            {messages.map((m, i) => (
+              <div key={i} className={`flex gap-3 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                {m.role === 'assistant' && (
+                  <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center shrink-0 border border-indigo-200 mt-1 shadow-sm">
+                    <Bot className="w-4 h-4 text-indigo-600" />
+                  </div>
+                )}
+                <div className={`max-w-[85%] px-4 py-3 text-[14px] shadow-sm leading-relaxed whitespace-pre-wrap ${
+                  m.role === 'user'
+                    ? 'bg-indigo-600 text-white rounded-[20px] rounded-tr-[4px] font-medium'
+                    : 'bg-white border border-slate-100 text-slate-800 rounded-[20px] rounded-tl-[4px]'
+                }`}>
+                  {m.content}
+                </div>
+              </div>
+            ))}
+
+            {loading && (
+              <div className="flex gap-3 justify-start animate-fade-in">
+                <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center shrink-0 border border-indigo-200 mt-1 shadow-sm">
+                  <Bot className="w-4 h-4 text-indigo-600" />
+                </div>
+                <div className="bg-white border border-slate-100 px-4 py-3 rounded-[20px] rounded-tl-[4px] shadow-sm flex items-center gap-1.5 h-[46px]">
+                  <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
               </div>
             )}
-            <div className={`max-w-[85%] px-4 py-3 text-[14px] shadow-sm leading-relaxed ${
-              m.role === 'user' 
-                ? 'bg-indigo-600 text-white rounded-[20px] rounded-tr-[4px] font-medium' 
-                : 'bg-white border border-slate-100 text-slate-800 rounded-[20px] rounded-tl-[4px]'
-            }`}>
-              {m.content}
-            </div>
-          </div>
-        ))}
-        
-        {/* Typing Indicator */}
-        {loading && (
-          <div className="flex gap-3 justify-start animate-fade-in">
-            <div className="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center shrink-0 border border-indigo-200 mt-1 shadow-sm">
-              <Bot className="w-4 h-4 text-indigo-600" />
-            </div>
-            <div className="bg-white border border-slate-100 px-4 py-3 rounded-[20px] rounded-tl-[4px] shadow-sm flex items-center gap-1.5 h-[46px]">
-              <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-            </div>
-          </div>
+            <div ref={bottomRef} />
+          </>
         )}
-        <div ref={bottomRef} />
       </div>
 
       {/* Input Area & Suggestions */}
@@ -171,15 +280,15 @@ function AIChatPanel({ onClose }: { onClose: () => void }) {
         )}
 
         <div className="flex gap-2 items-center bg-slate-50 border border-slate-200 p-1.5 rounded-2xl focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
-          <input 
-            value={input} 
+          <input
+            value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
-            className="flex-1 bg-transparent text-[14px] px-3 py-2 outline-none text-slate-800 placeholder:text-slate-400 font-medium" 
-            placeholder="Hỏi AI Co-pilot..." 
+            className="flex-1 bg-transparent text-[14px] px-3 py-2 outline-none text-slate-800 placeholder:text-slate-400 font-medium"
+            placeholder="Hỏi AI Co-pilot..."
           />
-          <button 
-            onClick={send} 
+          <button
+            onClick={send}
             disabled={!input.trim() || loading}
             className="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center shrink-0 hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:bg-slate-300 shadow-sm"
           >
@@ -212,6 +321,7 @@ export default function DashboardPage() {
   const { user, isCashier, isAdmin, isManager } = useAuthStore();
   const qc = useQueryClient();
   const isStaff = isCashier();
+  const canUseAiCopilot = isAdmin() || isManager();
 
   const [showAI, setShowAI] = useState(false);
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('30d');
@@ -704,7 +814,7 @@ export default function DashboardPage() {
       )}
 
       {/* ── AI CHATBOT TOGGLE & PANEL ── */}
-      {!showAI && !isStaff && (
+      {!showAI && canUseAiCopilot && (
         <button
           onClick={() => setShowAI(true)}
           className="fixed right-4 bottom-4 md:right-8 md:bottom-8 w-14 h-14 md:w-16 md:h-16 bg-gradient-to-tr from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-full shadow-[0_10px_25px_rgba(79,70,229,0.5)] flex items-center justify-center transition-transform hover:scale-110 z-[90] border-2 border-white/20"

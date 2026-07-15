@@ -575,12 +575,28 @@ export interface ReportDataPoint {
 // ─────────────────────────────────────────────────────────────
 export interface AiChatRequest {
   message: string;
-  conversationHistory?: string;
+  sessionId?: string;
 }
 
 export interface AiChatResponse {
+  sessionId: string;
   reply: string;
   sources: { title: string; excerpt: string }[];
+}
+
+export interface AiChatSessionSummary {
+  id: string;
+  title: string;
+  lastMessageAt: string | null;
+  createdAt: string;
+}
+
+export interface AiChatMessageDto {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  sources: { title: string; excerpt: string }[];
+  createdAt: string;
 }
 
 // ─────────────────────────────────────────────────────────────
