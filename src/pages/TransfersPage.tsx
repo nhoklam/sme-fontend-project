@@ -451,7 +451,7 @@ export default function TransfersPage() {
                       <div className="flex justify-end gap-1.5 items-center opacity-0 group-hover:opacity-100 transition-opacity">
                         
                         {/* Nút Xuất Kho (Dành cho phiếu nháp) */}
-                        {t.status === 'DRAFT' && (isAdmin() || user?.warehouseId === t.fromWarehouseId) && (
+                        {t.status === 'DRAFT' && !isAdmin() && user?.warehouseId === t.fromWarehouseId && (
                           <button
                             onClick={() => setConfirmDispatch(t.id)}
                             className="h-8 px-3 rounded-lg text-xs font-bold transition-colors flex items-center justify-center text-indigo-700 bg-indigo-50 border border-indigo-100/60 hover:bg-indigo-100 shadow-sm shrink-0"
@@ -462,7 +462,7 @@ export default function TransfersPage() {
                         )}
 
                         {/* Nút Nhận Hàng (Dành cho phiếu đang vận chuyển) */}
-                        {t.status === 'DISPATCHED' && (isAdmin() || user?.warehouseId === t.toWarehouseId) && (
+                        {t.status === 'DISPATCHED' && !isAdmin() && user?.warehouseId === t.toWarehouseId && (
                           <button
                             onClick={() => setReceivingTransferId(t.id)}
                             className="h-8 px-3 rounded-lg text-xs font-bold transition-colors flex items-center justify-center text-emerald-700 bg-emerald-50 border border-emerald-100/60 hover:bg-emerald-100 shadow-sm shrink-0"
@@ -473,7 +473,7 @@ export default function TransfersPage() {
                         )}
                         
                         {/* ĐÃ SỬA: Ẩn nút Sửa nếu là phiếu gom hàng tự động */}
-                        {t.status === 'DRAFT' && !t.referenceOrderId && (isAdmin() || user?.warehouseId === t.fromWarehouseId) && (
+                        {t.status === 'DRAFT' && !t.referenceOrderId && !isAdmin() && user?.warehouseId === t.fromWarehouseId && (
                           <button
                             onClick={() => setEditingTransferId(t.id)}
                             className="p-1.5 rounded-lg flex items-center justify-center text-amber-600 hover:bg-amber-50 transition-colors shrink-0"
@@ -484,7 +484,7 @@ export default function TransfersPage() {
                         )}
 
                         {/* ĐÃ SỬA: Ẩn nút Hủy nếu là phiếu gom hàng tự động */}
-                        {t.status === 'DRAFT' && !t.referenceOrderId && (isAdmin() || user?.warehouseId === t.fromWarehouseId) && (
+                        {t.status === 'DRAFT' && !t.referenceOrderId && !isAdmin() && user?.warehouseId === t.fromWarehouseId && (
                           <button
                             onClick={() => handleCancelTransfer(t.id)}
                             className="p-1.5 rounded-lg flex items-center justify-center text-rose-500 hover:bg-rose-50 transition-colors shrink-0"

@@ -417,8 +417,8 @@ export default function PurchaseOrdersPage() {
                           <Eye className="w-4 h-4" />
                         </button>
                         
-                        {/* ĐÃ SỬA: Chỉ PENDING mới được duyệt */}
-                        {po.status === 'PENDING' && (isAdmin() || user?.warehouseId === po.warehouseId) && (
+                        {/* ĐÃ SỬA: Chỉ PENDING mới được duyệt, Admin không được duyệt */}
+                        {po.status === 'PENDING' && !isAdmin() && user?.warehouseId === po.warehouseId && (
                           <button 
                             onClick={() => setConfirmApprove(po.id)} 
                             className="h-8 px-3 rounded-lg text-xs font-bold transition-colors flex items-center justify-center bg-emerald-50 text-emerald-700 border border-emerald-100/50 hover:bg-emerald-100 shadow-sm shrink-0" 
@@ -428,8 +428,8 @@ export default function PurchaseOrdersPage() {
                           </button>
                         )}
                         
-                        {/* ĐÃ SỬA: Chỉ PENDING mới được hủy */}
-                        {po.status === 'PENDING' && (isAdmin() || user?.warehouseId === po.warehouseId) && (
+                        {/* ĐÃ SỬA: Chỉ PENDING mới được hủy, Admin không được hủy */}
+                        {po.status === 'PENDING' && !isAdmin() && user?.warehouseId === po.warehouseId && (
                           <button 
                             onClick={() => setCancelPoId(po.id)} 
                             className="p-1.5 rounded-lg flex items-center justify-center text-rose-500 hover:bg-rose-50 transition-colors shrink-0" 

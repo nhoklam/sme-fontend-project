@@ -71,6 +71,7 @@ function StockTakeDetailModal({
   stockTakeId, onClose,
 }: { stockTakeId: string; onClose: () => void }) {
   const qc = useQueryClient();
+  const { isAdmin, user } = useAuthStore();
 
   const [pendingCounts, setPendingCounts] = useState<Record<string, number>>({});
   const [searchItem, setSearchItem] = useState('');
@@ -204,11 +205,13 @@ function StockTakeDetailModal({
   );
   if (!st) return null;
 
-  const canEdit   = st.status === 'IN_PROGRESS';
-  const canStart  = st.status === 'DRAFT';
-  const canFinish = st.status === 'IN_PROGRESS' && progress === 100;
+  const isBranchManager = !isAdmin() && user?.warehouseId === st.warehouseId;
+
+  const canEdit   = st.status === 'IN_PROGRESS' && isBranchManager;
+  const canStart  = st.status === 'DRAFT' && isBranchManager;
+  const canFinish = st.status === 'IN_PROGRESS' && progress === 100 && isBranchManager;
   const canApprove = st.status === 'COMPLETED';
-  const canCancel = st.status === 'DRAFT' || st.status === 'IN_PROGRESS';
+  const canCancel = (st.status === 'DRAFT' || st.status === 'IN_PROGRESS') && isBranchManager;
 
   return (
     <ModalShell onClose={handleSafeClose} title={`Phiếu Kiểm kê #${st.code}`} wide>
@@ -242,7 +245,7 @@ function StockTakeDetailModal({
       )}
 
       <div className="flex-1 overflow-auto px-6 py-4 flex flex-col">
-        {st.status === 'DRAFT' && (
+        {st.status === 'DRAFT' && isBranchManager && (
           <div className="mb-4 p-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl flex flex-col sm:flex-row gap-3 items-end sm:items-center">
             <div className="flex-1 w-full">
               <label className="block text-xs font-bold text-indigo-800 uppercase tracking-wider mb-1.5">Bổ sung sản phẩm vào phiếu</label>
@@ -298,12 +301,12 @@ function StockTakeDetailModal({
                 <th className="text-right px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Hệ thống</th>
                 <th className="text-center px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Thực tế</th>
                 <th className="text-center px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wider">Chênh lệch</th>
-                {st.status === 'DRAFT' && <th className="w-12"></th>}
+                {st.status === 'DRAFT' && isBranchManager && <th className="w-12"></th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredItems.length === 0 ? (
-                <tr><td colSpan={st.status === 'DRAFT' ? 5 : 4} className="text-center py-12 text-slate-400 text-sm">Không có sản phẩm nào</td></tr>
+                <tr><td colSpan={st.status === 'DRAFT' && isBranchManager ? 5 : 4} className="text-center py-12 text-slate-400 text-sm">Không có sản phẩm nào</td></tr>
               ) : filteredItems.map((item: any) => {
                 const pending = pendingCounts[item.productId];
                 const displayActual = pending !== undefined ? pending : item.actualQuantity;
@@ -357,7 +360,7 @@ function StockTakeDetailModal({
                     <td className="px-4 py-3 text-center">
                       <DiscrepancyBadge value={computedDisc} />
                     </td>
-                    {st.status === 'DRAFT' && (
+                    {st.status === 'DRAFT' && isBranchManager && (
                       <td className="px-4 py-3 text-right">
                         <button 
                           onClick={() => { if(window.confirm('Xóa sản phẩm này khỏi phiếu?')) mutRemoveProduct.mutate(item.productId); }}
