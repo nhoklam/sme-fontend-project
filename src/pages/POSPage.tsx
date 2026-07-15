@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -6,8 +5,10 @@ import toast from 'react-hot-toast';
 import { useReactToPrint } from 'react-to-print';
 import {
   Search, X, Lock, CheckCircle, Package, ScanLine, Smartphone,
-  Clock, RefreshCcw, Tag, Minus, Plus, Trash2, Banknote, CreditCard, ChevronRight, ChevronLeft, User, Gift, Wallet, ArrowRight
+  Clock, RefreshCcw, Tag, Minus, Plus, Trash2, Banknote, CreditCard, ChevronRight, ChevronLeft, User, Gift, Wallet, ArrowRight,
+  RotateCcw, QrCode
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 
 import { posService } from '@/services/pos.service';
 import { productService } from '@/services/product.service';
@@ -19,9 +20,11 @@ import { Spinner } from '@/components/ui';
 import { POSPrintTemplate } from './POSPrintTemplate';
 import BarcodeScanner from '@/components/BarcodeScanner';
 import CustomerSelectModal from '@/components/CustomerSelectModal';
-import PromotionCodeInput from '@/components/pos/PromotionCodeInput'; // [Step 6] Nhập mã khuyến mãi
+import PromotionCodeInput from '@/components/pos/PromotionCodeInput';
+import RefundModal from '@/components/pos/RefundModal';
+import { usePaymentStatusSocket } from '@/hooks/usePaymentStatusSocket';
 
-import type { CartItem, InvoiceResponse } from '@/types';
+import type { CartItem, InvoiceResponse, PaymentQrResponse } from '@/types';
 
 export default function POSPage() {
   const { user } = useAuthStore();
@@ -30,17 +33,20 @@ export default function POSPage() {
   const {
     currentShift, setCurrentShift,
     items, customer, pointsToUse,
-    promotionCode, // [Step 6] Mã khuyến mãi đã áp dụng
+    promotionCode,
     addItem, updateQuantity, removeItem, updateUnitPrice,
     setCustomer, setPointsToUse,
     clearCart,
     totalAmount, discountAmount, finalAmount,
+    note, setNote,
+    holdCart, recallCart, savedCart
   } = usePOSStore();
 
   // --- MOBILE FIRST UI STATES ---
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  const [isRefundOpen, setIsRefundOpen] = useState(false);
 
   // --- SHIFT STATES ---
   const [showOpenShift, setShowOpenShift] = useState(false);
@@ -64,11 +70,30 @@ export default function POSPage() {
 
   // --- PAYMENT STATES ---
   const [activePayMethod, setActivePayMethod] = useState<'CASH' | 'MOMO' | 'BANK'>('CASH');
+  const [paymentTxn, setPaymentTxn] = useState<PaymentQrResponse | null>(null);
   
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchTerm), 300);
     return () => clearTimeout(timer);
   }, [searchTerm]);
+
+  // --- PHÍM TẮT F2 (GIỮ ĐƠN) ---
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F2') {
+        e.preventDefault();
+        if (items.length > 0) {
+          holdCart();
+          toast.success('Đã giữ đơn hàng hiện tại. Nhấn F2 khi giỏ trống để gọi lại.');
+        } else if (savedCart) {
+          recallCart();
+          toast.success('Đã gọi lại đơn hàng đã giữ.');
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [items.length, savedCart, holdCart, recallCart]);
 
   // --- QUERIES ---
   const { data: suggestions, isFetching: isSearching } = useQuery({
@@ -83,7 +108,6 @@ export default function POSPage() {
     enabled: !!(currentShift?.warehouseId || user?.warehouseId),
   });
 
-  // --- TÍNH TOÁN DỮ LIỆU GỢI Ý & TỒN KHO ---
   const displaySuggestions = useMemo(() => {
     if (!suggestions) return [];
     return suggestions.map((p: any) => {
@@ -109,7 +133,7 @@ export default function POSPage() {
     onError: (err) => toast.error(getErrorMessage(err)),
   });
 
-    const closeShiftMut = useMutation({
+  const closeShiftMut = useMutation({
     mutationFn: () => posService.closeShift({ reportedCash: parseFloat(reportedCash) || 0, discrepancyReason: discrepancyReason || undefined }),
     onSuccess: (res) => { setCurrentShift(res.data.data); setShowCloseShift(false); toast.success('Đóng ca thành công! Chờ Quản lý duyệt.'); },
     onError: (err) => toast.error(getErrorMessage(err)),
@@ -118,41 +142,67 @@ export default function POSPage() {
   const scanMut = useMutation({
     mutationFn: async (code: string) => {
       const cleanCode = code.trim();
-      const res = await productService.getProducts({ keyword: cleanCode, size: 5, isActive: true });
-      const products = res.data.data.content;
-      
-      if (!products || products.length === 0) throw new Error('Not found');
-      
-      const exactMatch = products.find((p: any) => p.isbnBarcode === cleanCode || p.sku === cleanCode);
-      return exactMatch || products[0];
+      const warehouseId = currentShift?.warehouseId || user?.warehouseId;
+      const res = await productService.getByBarcode(cleanCode, warehouseId);
+      return res.data.data;
     },
     onSuccess: (product) => {
       handleAddToCart(product);
       try { new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=').play(); } catch {}
     },
-    onError: () => { toast.error('Không tìm thấy sản phẩm có mã này!'); setSearchTerm(''); },
+    onError: (err) => {
+      toast.error(getErrorMessage(err));
+      setSearchTerm('');
+    },
+  });
+
+  const buildCartPayload = () => ({
+    shiftId: currentShift!.id,
+    customerId: customer?.id,
+    items: items.map(i => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice })),
+    pointsToUse: pointsToUse || undefined,
+    promotionCode: promotionCode || undefined,
+    note: note || undefined,
   });
 
   const checkoutMut = useMutation({
-    mutationFn: () => {
-      let mappedMethod = activePayMethod === 'BANK' ? 'VNPAY' : activePayMethod;
-      const paymentPayload = [{ method: mappedMethod, amount: finalAmount() }];
+    mutationFn: (overridePayments?: { method: string; amount: number; reference?: string }[]) => {
+      const mappedMethod = activePayMethod === 'BANK' ? 'VNPAY' : activePayMethod;
+      const paymentPayload = overridePayments ?? [{ method: mappedMethod, amount: finalAmount() }];
 
-      return posService.checkout({
-        shiftId: currentShift!.id, 
-        customerId: customer?.id,
-        items: items.map(i => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice })),
-        payments: paymentPayload,
-        pointsToUse: pointsToUse || undefined, 
-        promotionCode: promotionCode || undefined, // [Step 6] Gửi mã KM đã validate để Backend apply + tăng usedCount
-      }).then(r => r.data.data);
+      return posService.checkout({ ...buildCartPayload(), payments: paymentPayload })
+        .then(r => r.data.data);
     },
     onSuccess: (invoice) => {
-      setLastInvoice(invoice); setShowInvoice(true); setIsCartOpen(false); clearCart(); 
-      toast.success(`Thanh toán thành công!`);
+      setLastInvoice(invoice); setShowInvoice(true); setIsCartOpen(false); clearCart();
+      setPaymentTxn(null);
+      setActivePayMethod('CASH');
+      qc.invalidateQueries({ queryKey: ['pos-inventory'] }); 
+      toast.success('Thanh toán thành công!');
     },
     onError: (err) => toast.error(getErrorMessage(err)),
   });
+
+  const createQrMut = useMutation({
+    mutationFn: () => posService.createPaymentQr(buildCartPayload()).then(r => r.data.data),
+    onSuccess: (txn) => setPaymentTxn(txn),
+    onError: (err) => toast.error(getErrorMessage(err)),
+  });
+
+  usePaymentStatusSocket(paymentTxn?.code ?? null, (status, reference) => {
+    if (status === 'PAID') {
+      toast.success('Đã nhận được thanh toán! Đang tạo hóa đơn...');
+      checkoutMut.mutate([{ method: 'VNPAY', amount: paymentTxn!.amount, reference }]);
+    } else if (status === 'CANCELLED' || status === 'EXPIRED') {
+      toast.error('Giao dịch đã bị huỷ hoặc hết hạn, vui lòng tạo lại mã QR.');
+      setPaymentTxn(null);
+    }
+  });
+
+  const handleCancelQr = () => {
+    if (paymentTxn) posService.cancelPaymentQr(paymentTxn.code).catch(() => {});
+    setPaymentTxn(null);
+  };
 
   // --- HANDLERS ---
   const handleAddToCart = (product: any) => {
@@ -178,11 +228,13 @@ export default function POSPage() {
 
   const handleCheckoutSubmit = async () => {
     if (items.length === 0) return;
+
     if (activePayMethod === 'MOMO' || activePayMethod === 'BANK') {
-        const confirmed = window.confirm(`Xác nhận: Khách hàng ĐÃ CHUYỂN KHOẢN ${formatCurrency(finalAmount())} thành công?`);
-        if (!confirmed) return; 
+      if (!paymentTxn) createQrMut.mutate();
+      return;
     }
-    checkoutMut.mutate();
+
+    checkoutMut.mutate(undefined);
   };
 
   // ==========================================
@@ -267,12 +319,44 @@ export default function POSPage() {
               </div>
             </div>
             
-            <button 
-              onClick={() => setShowCloseShift(true)} 
-              className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100 rounded-xl text-xs font-bold transition-colors shadow-sm"
-            >
-              <Lock className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Đóng ca</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {savedCart && savedCart.length > 0 && (
+                <button
+                  onClick={() => { recallCart(); toast.success('Đã gọi lại đơn hàng đã giữ.'); }}
+                  className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl text-xs font-bold shadow-sm hover:bg-amber-100 transition-colors animate-pulse"
+                  title="Gọi lại đơn đã giữ (F2)"
+                >
+                  <Clock className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{savedCart.length} SP đang giữ</span>
+                </button>
+              )}
+
+              <button
+                onClick={() => {
+                  if (items.length === 0) { toast('Giỏ hàng đang trống, không có gì để giữ.'); return; }
+                  holdCart();
+                  toast.success('Đã giữ đơn hàng hiện tại.');
+                }}
+                disabled={items.length === 0}
+                className="flex items-center gap-2 px-3 py-2 bg-white text-slate-600 border border-slate-200 rounded-xl text-xs font-bold shadow-sm hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                title="Giữ đơn hiện tại (F2)"
+              >
+                <RefreshCcw className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Giữ đơn</span>
+              </button>
+
+              <button
+                onClick={() => setIsRefundOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100 rounded-xl text-xs font-bold transition-colors shadow-sm"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Trả hàng</span>
+              </button>
+
+              <button 
+                onClick={() => setShowCloseShift(true)} 
+                className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100 rounded-xl text-xs font-bold transition-colors shadow-sm"
+              >
+                <Lock className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Đóng ca</span>
+              </button>
+            </div>
           </div>
 
           {/* THANH TÌM KIẾM & TOOLBAR */}
@@ -394,7 +478,7 @@ export default function POSPage() {
                       <Trash2 className="w-4 h-4" />
                     </button>
                     
-                    {/* Quantity Controls - Pill shape */}
+                    {/* Quantity Controls */}
                     <div className="flex items-center bg-slate-50 rounded-xl border border-slate-200/80 p-1 shadow-sm">
                       <button onClick={() => updateQuantity(item.productId, item.quantity - 1)} className="w-10 h-8 flex items-center justify-center text-slate-600 hover:bg-white rounded-lg transition-colors"><Minus className="w-4 h-4" /></button>
                       <div className="w-12 text-center font-black text-[15px] text-slate-800">{item.quantity}</div>
@@ -426,7 +510,6 @@ export default function POSPage() {
       </div>
 
       {/* ── 3. KHU VỰC THANH TOÁN (PAYMENT PANEL) ── */}
-      {/* Trên Mobile: Trượt từ dưới lên hoặc phải sang. Trên Desktop: Cố định bên phải */}
       <div className={`
         fixed inset-y-0 right-0 z-40 bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-out border-l border-slate-100
         w-full md:w-[400px] xl:w-[450px]
@@ -484,10 +567,24 @@ export default function POSPage() {
             )}
           </div>
 
-          {/* [NEW - Step 6] MÃ KHUYẾN MÃI */}
+          {/* MÃ KHUYẾN MÃI */}
           <div>
             <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Mã khuyến mãi</h3>
             <PromotionCodeInput orderTotal={totalAmount()} disabled={!currentShift || items.length === 0} />
+          </div>
+
+          {/* GHI CHÚ */}
+          <div>
+            <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+              Ghi chú đơn hàng
+            </h3>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="VD: khách hẹn giao sau, đóng gói quà tặng..."
+              rows={2}
+              className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-[13px] font-medium focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none resize-none shadow-sm"
+            />
           </div>
 
           {/* TÓM TẮT TIỀN */}
@@ -498,7 +595,7 @@ export default function POSPage() {
              </div>
              {discountAmount() > 0 && (
                <div className="flex justify-between items-center text-emerald-600 text-sm font-bold bg-emerald-50 p-2 rounded-lg border border-emerald-100/50">
-                 <span className="flex items-center gap-1.5"><Gift className="w-4 h-4"/> Giảm giá (Điểm)</span>
+                 <span className="flex items-center gap-1.5"><Gift className="w-4 h-4"/> Giảm giá</span>
                  <span>-{formatCurrency(discountAmount())}</span>
                </div>
              )}
@@ -523,33 +620,53 @@ export default function POSPage() {
               </button>
             </div>
 
+            {/* QR PAYOS */}
             {(activePayMethod === 'MOMO' || activePayMethod === 'BANK') && finalAmount() > 0 && (
               <div className="mt-6 flex flex-col items-center animate-scale-in">
-                <div className="p-3 bg-white border border-slate-200 rounded-3xl shadow-sm mb-4">
-                  <img 
-                    src={`https://img.vietqr.io/image/${activePayMethod === 'MOMO' ? 'momo' : '970436'}-0933939339-compact.png?amount=${finalAmount()}&addInfo=ThanhToanPOS&accountName=SME%20STORE`} 
-                    alt="Payment QR" 
-                    className="w-48 h-48 object-contain rounded-2xl"
-                  />
-                </div>
-                <div className="bg-amber-50 border border-amber-200/60 text-amber-700 p-4 rounded-2xl text-[13px] font-medium text-center shadow-sm w-full">
-                  <strong className="block mb-1">Đưa mã QR này cho khách quét.</strong>
-                  Vui lòng kiểm tra biến động số dư trước khi chốt đơn!
-                </div>
+                {!paymentTxn ? (
+                  <button
+                    onClick={() => createQrMut.mutate()}
+                    disabled={createQrMut.isPending}
+                    className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {createQrMut.isPending
+                      ? <Spinner size="sm" className="text-white" />
+                      : <QrCode className="w-4 h-4" />}
+                    Tạo mã QR thanh toán
+                  </button>
+                ) : (
+                  <>
+                    <div className="p-3 bg-white border border-slate-200 rounded-3xl shadow-sm mb-4">
+                      <QRCodeSVG value={paymentTxn.qrCode} size={192} />
+                    </div>
+                    <div className="bg-amber-50 border border-amber-200/60 text-amber-700 p-4 rounded-2xl text-[13px] font-medium text-center shadow-sm w-full mb-3">
+                      <strong className="block mb-1">Đưa mã QR này cho khách quét.</strong>
+                      Hệ thống tự động ghi nhận khi tiền về — không cần bấm xác nhận.
+                    </div>
+                    <button
+                      onClick={handleCancelQr}
+                      className="text-xs font-bold text-slate-400 hover:text-rose-500 transition-colors"
+                    >
+                      Huỷ mã QR này
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
-        </div>
 
-        {/* NÚT CHỐT ĐƠN CỐ ĐỊNH DƯỚI CÙNG PANEL */}
-        <div className="p-5 bg-white border-t border-slate-100 shrink-0 z-10 shadow-[0_-4px_24px_rgb(0,0,0,0.02)]">
-          <button 
-             onClick={handleCheckoutSubmit}
-             disabled={items.length === 0 || checkoutMut.isPending}
-             className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold text-[16px] shadow-[0_4px_12px_rgb(99,102,241,0.3)] active:scale-[0.98] disabled:bg-slate-300 disabled:shadow-none transition-all flex justify-center items-center gap-2"
-          >
-             {checkoutMut.isPending ? <Spinner size="md" className="text-white"/> : 'Hoàn tất & In Bill'}
-          </button>
+          {/* NÚT CHỐT ĐƠN CỐ ĐỊNH DƯỚI CÙNG PANEL */}
+          <div className="p-5 bg-white border-t border-slate-100 shrink-0 z-10 shadow-[0_-4px_24px_rgb(0,0,0,0.02)]">
+            <button 
+               onClick={handleCheckoutSubmit}
+               disabled={items.length === 0 || checkoutMut.isPending || createQrMut.isPending || !!paymentTxn}
+               className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-bold text-[16px] shadow-[0_4px_12px_rgb(99,102,241,0.3)] active:scale-[0.98] disabled:bg-slate-300 disabled:shadow-none transition-all flex justify-center items-center gap-2"
+            >
+               {checkoutMut.isPending
+                 ? <Spinner size="md" className="text-white"/>
+                 : paymentTxn ? 'Đang chờ khách quét QR...' : 'Hoàn tất & In Bill'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -561,6 +678,8 @@ export default function POSPage() {
           <CustomerSelectModal onSelect={(c) => { setCustomer(c); setIsCustomerModalOpen(false); }} onClose={() => setIsCustomerModalOpen(false)} />
         </div>
       )}
+
+      {isRefundOpen && <RefundModal onClose={() => setIsRefundOpen(false)} />}
       
       {/* MODAL THÀNH CÔNG */}
       {showInvoice && lastInvoice && (

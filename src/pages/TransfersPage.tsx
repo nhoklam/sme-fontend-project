@@ -12,8 +12,6 @@ import { formatDateTime, formatCurrency } from '@/lib/utils';
 import { PageLoader, EmptyState, Pagination, ConfirmDialog, Spinner } from '@/components/ui';
 import toast from 'react-hot-toast';
 import { useAuthStore } from '@/stores/auth.store';
-// ĐÃ THÊM: Sử dụng Hook WebSocket chuẩn thay vì tự khởi tạo
-import { useDashboardWebSocket } from '@/hooks/useDashboardWebSocket';
 
 import { CreateTransferModal } from './CreateTransferModal';
 import { TransferDetailsModal } from './TransferDetailsModal';
@@ -70,9 +68,6 @@ export default function TransfersPage() {
   const [editingTransferId, setEditingTransferId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
-  // ĐÃ SỬA: Sử dụng Hook WebSocket chuẩn, tự động dọn dẹp memory leak
-  useDashboardWebSocket({ warehouseId: user?.warehouseId });
-
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedKeyword(keyword), 500);
     return () => clearTimeout(timer);
@@ -98,13 +93,13 @@ export default function TransfersPage() {
 
   const { data: warehouses } = useQuery({
     queryKey: ['warehouses-dict'],
-    queryFn: () => warehouseService.getAll().then(r => r.data.data),
+    queryFn: () => warehouseService.getAll().then((r: any) => r.data.data),
     staleTime: 5 * 60 * 1000, 
   });
 
   const { data: products } = useQuery({
     queryKey: ['products-dict'],
-    queryFn: () => productService.getProducts({ size: 1000 }).then(r => r.data.data.content),
+    queryFn: () => productService.getProducts({ size: 1000 }).then((r: any) => r.data.data.content),
     staleTime: 5 * 60 * 1000, 
   });
 

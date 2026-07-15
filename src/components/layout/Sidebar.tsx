@@ -49,11 +49,10 @@ const navItems = [
       { icon: Receipt,    label: 'Đối soát COD',     to: '/cod-reconciliation', roles: ['ROLE_ADMIN'] },
     ],
   },
-  // [NEW Step 10] Nhóm riêng cho quyền giám sát & quản trị hệ thống của Admin
   {
     label: 'QUẢN TRỊ HỆ THỐNG',
     items: [
-      { icon: UserCog,   label: 'Nhân sự',         to: '/users',       roles: ['ROLE_ADMIN'] },
+      { icon: UserCog,   label: 'Nhân sự',         to: '/users',       roles: ['ROLE_ADMIN', 'ROLE_MANAGER'] },
       { icon: Building2, label: 'Chi nhánh',       to: '/warehouses',  roles: ['ROLE_ADMIN'] },
       { icon: History,   label: 'Nhật ký hệ thống', to: '/audit-logs', roles: ['ROLE_ADMIN'] },
     ],

@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect } from 'react';
 import { Bell, X, CheckCheck, Menu } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth.store';
@@ -28,8 +27,8 @@ function getNotifStyle(type: string) {
   switch (type) {
     case 'LOW_STOCK':    return { dot: 'bg-red-500',    label: 'bg-red-50 text-red-700 border-red-100' };
     case 'NEW_ORDER':    return { dot: 'bg-blue-500',   label: 'bg-blue-50 text-blue-700 border-blue-100' };
-    case 'SHIFT_CLOSE':  return { dot: 'bg-purple-500', label: 'bg-purple-50 text-purple-700 border-purple-100' };
-    case 'TRANSFER':     return { dot: 'bg-amber-500',  label: 'bg-amber-50 text-amber-700 border-amber-100' };
+    case 'SHIFT_PENDING_APPROVAL':  return { dot: 'bg-purple-500', label: 'bg-purple-50 text-purple-700 border-purple-100' };
+    case 'TRANSFER_ARRIVED':     return { dot: 'bg-amber-500',  label: 'bg-amber-50 text-amber-700 border-amber-100' };
     default:             return { dot: 'bg-gray-400',   label: 'bg-gray-50 text-gray-600 border-gray-100' };
   }
 }
@@ -38,8 +37,7 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const { data: notifications, isLoading } = useQuery({
     queryKey: ['notifications-unread'],
-    queryFn: () => notificationService.getUnread().then(r => r.data.data),
-    refetchInterval: 30_000,
+    queryFn: () => notificationService.getUnread().then((r: any) => r.data.data),
   });
 
   const markReadMut = useMutation({
@@ -52,6 +50,7 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
     onSuccess: () => {
       toast.success('Đã đánh dấu tất cả là đã đọc');
       qc.invalidateQueries({ queryKey: ['notifications-unread'] });
+      qc.invalidateQueries({ queryKey: ['notifications-count'] });
     },
   });
 
@@ -109,7 +108,7 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
                   <p className="text-[12px] text-slate-500 mt-0.5 leading-relaxed line-clamp-2">{notif.message}</p>
                   <div className="flex items-center gap-2 mt-1.5">
                     <span className={`text-[9px] px-1.5 py-0.5 rounded border font-bold uppercase tracking-wider ${style.label}`}>
-                      {notif.type?.replace('_', ' ')}
+                      {notif.type?.replace(/_/g, ' ')}
                     </span>
                     <span className="text-[10px] font-medium text-slate-400">{formatTimeAgo(notif.createdAt)}</span>
                   </div>
@@ -127,15 +126,16 @@ function NotificationPanel({ onClose }: { onClose: () => void }) {
 }
 
 export default function Header({ onMenuClick }: { onMenuClick?: () => void }) {
-  const user = useAuthStore((s) => s.user);
+  const user = useAuthStore((s: any) => s.user);
+  const isCashier = useAuthStore((s: any) => s.isCashier()); // ĐÃ THÊM
   const { pathname } = useLocation();
   const [showNotif, setShowNotif] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
 
   const { data: unreadCount } = useQuery({
     queryKey: ['notifications-count'],
-    queryFn: () => notificationService.countUnread().then(r => r.data.data),
-    refetchInterval: 30_000,
+    queryFn: () => notificationService.countUnread().then((r: any) => r.data.data),
+    enabled: !isCashier, // ĐÃ THÊM: Nếu là Cashier thì không gọi API này
   });
 
   const title = PAGE_TITLES[pathname] ?? 'SME ERP & POS';
@@ -153,7 +153,6 @@ export default function Header({ onMenuClick }: { onMenuClick?: () => void }) {
   return (
     <header className="h-12 md:h-14 bg-white border-b border-slate-200 flex items-center px-3 md:px-6 gap-3 flex-shrink-0 sticky top-0 z-30">
       
-      {/* Nút Menu Hamburger chỉ hiện trên Mobile/Tablet */}
       <button 
         onClick={onMenuClick} 
         className="lg:hidden p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
@@ -164,23 +163,25 @@ export default function Header({ onMenuClick }: { onMenuClick?: () => void }) {
       <h1 className="font-bold text-slate-800 text-[15px] md:text-base flex-1 truncate tracking-tight">{title}</h1>
 
       <div className="flex items-center gap-3 shrink-0">
-        {/* Bell with Notification Panel */}
-        <div className="relative" ref={notifRef}>
-          <button
-            onClick={() => setShowNotif(v => !v)}
-            className="relative p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
-          >
-            <Bell className="w-[18px] h-[18px]" />
-            {(unreadCount ?? 0) > 0 && (
-              <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-rose-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center leading-none border border-white">
-                {(unreadCount ?? 0) > 9 ? '9+' : unreadCount}
-              </span>
-            )}
-          </button>
-          {showNotif && <NotificationPanel onClose={() => setShowNotif(false)} />}
-        </div>
+        
+        {/* ĐÃ THÊM: Ẩn chuông thông báo với Cashier */}
+        {!isCashier && (
+          <div className="relative" ref={notifRef}>
+            <button
+              onClick={() => setShowNotif(v => !v)}
+              className="relative p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+            >
+              <Bell className="w-[18px] h-[18px]" />
+              {(unreadCount ?? 0) > 0 && (
+                <span className="absolute top-0.5 right-0.5 w-3.5 h-3.5 bg-rose-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center leading-none border border-white">
+                  {(unreadCount ?? 0) > 9 ? '9+' : unreadCount}
+                </span>
+              )}
+            </button>
+            {showNotif && <NotificationPanel onClose={() => setShowNotif(false)} />}
+          </div>
+        )}
 
-        {/* Avatar */}
         <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
           <div className="w-7 h-7 bg-indigo-600 rounded-full flex items-center justify-center shadow-sm">
             <span className="text-white text-[11px] font-bold">

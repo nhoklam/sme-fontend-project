@@ -71,6 +71,7 @@ export function InventoryHistoryModal({ inventory, onClose }: InventoryHistoryMo
                     <th className="py-3.5 px-4 text-center">SL thay đổi</th>
                     <th className="py-3.5 px-4 text-center">Tồn cuối</th>
                     <th className="py-3.5 px-4 text-center">Tham chiếu</th>
+                    <th className="py-3.5 px-4 text-center">Người thực hiện</th> 
                     <th className="py-3.5 px-4 w-full">Ghi chú</th>
                   </tr>
                 </thead>
@@ -100,6 +101,13 @@ export function InventoryHistoryModal({ inventory, onClose }: InventoryHistoryMo
                             {txn.referenceCode}
                           </span>
                         </td>
+                        <td className="py-3 px-4 text-center">
+                          <span className="font-semibold text-[12px] text-indigo-700 bg-indigo-50 px-2 py-1 rounded border border-indigo-100">
+                            {txn.createdBy || 'Hệ thống'}
+                          </span>
+                        </td>
+
+
                         <td className="py-3 px-4 text-gray-600 text-[13px] max-w-xs truncate" title={txn.note || ''}>{txn.note || '-'}</td>
                       </tr>
                     );

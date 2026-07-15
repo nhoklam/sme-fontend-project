@@ -10,6 +10,7 @@ import { authService } from '@/services/auth.service';
 import { warehouseService } from '@/services/warehouse.service';
 import { cn, formatDateTime } from '@/lib/utils';
 import { PageLoader, EmptyState, Spinner } from '@/components/ui';
+import { useAuthStore } from '@/stores/auth.store';
 
 // ─────────────────────────────────────────────────────────────
 // TYPES & HELPERS
@@ -51,11 +52,13 @@ const ROLE_FILTER_OPTS = [
 ];
 
 // ─────────────────────────────────────────────────────────────
-// CREATE / EDIT MODAL (Đã gộp logic chặt chẽ từ SettingsPage)
+// CREATE / EDIT MODAL
 // ─────────────────────────────────────────────────────────────
 function UserFormModal({ initial, onClose }: { initial?: UserRow; onClose: () => void }) {
   const qc = useQueryClient();
   const isEdit = !!initial;
+
+  const { user, isManager } = useAuthStore();
 
   const { data: warehouses } = useQuery({
     queryKey: ['warehouses-users'],
@@ -73,13 +76,12 @@ function UserFormModal({ initial, onClose }: { initial?: UserRow; onClose: () =>
     fullName: initial?.fullName ?? '',
     email: initial?.email ?? '',
     phone: initial?.phone ?? '',
-    role: initial?.role ?? 'ROLE_CASHIER',
-    warehouseId: initial?.warehouseId ?? '',
+    role: initial?.role ?? (isManager() ? 'ROLE_CASHIER' : 'ROLE_CASHIER'),
+    warehouseId: initial?.warehouseId ?? (isManager() ? (user?.warehouseId || '') : ''),
   });
 
   const set = (k: keyof typeof form, v: string) => setForm(prev => ({ ...prev, [k]: v }));
 
-  // [Admin spec] Manager/Cashier BẮT BUỘC gán warehouseId. Admin thì không cần.
   const needsWarehouse = form.role !== 'ROLE_ADMIN';
 
   const createMut = useMutation({
@@ -119,7 +121,6 @@ function UserFormModal({ initial, onClose }: { initial?: UserRow; onClose: () =>
     else createMut.mutate(payload);
   };
 
-  // Tính toán danh sách kho khả dụng (Không cho 2 Manager quản lý 1 kho)
   const availableWarehouses = useMemo(() => {
     if (!warehouses) return [];
     if (form.role === 'ROLE_MANAGER') {
@@ -187,6 +188,17 @@ function UserFormModal({ initial, onClose }: { initial?: UserRow; onClose: () =>
                 {(['ROLE_ADMIN', 'ROLE_MANAGER', 'ROLE_CASHIER'] as const).map(r => {
                   const cfg = ROLE_CONFIG[r];
                   const Icon = cfg.icon;
+                  
+                  const isSelf = isEdit && initial?.id === user?.id;
+                  let isDisabled = false;
+                  if (isManager()) {
+                    if (isSelf) {
+                      isDisabled = r !== 'ROLE_MANAGER'; 
+                    } else {
+                      isDisabled = r !== 'ROLE_CASHIER'; 
+                    }
+                  }
+
                   return (
                     <button key={r} onClick={() => {
                         let newWid = form.warehouseId;
@@ -194,8 +206,11 @@ function UserFormModal({ initial, onClose }: { initial?: UserRow; onClose: () =>
                         if (r === 'ROLE_MANAGER' && form.role === 'ROLE_CASHIER') newWid = ''; 
                         setForm(p => ({ ...p, role: r, warehouseId: newWid }));
                       }}
+                      disabled={isDisabled}
                       className={cn('flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all',
-                        form.role === r ? 'border-indigo-400 bg-white shadow-sm' : 'border-slate-200 bg-white/50 hover:bg-white')}>
+                        form.role === r ? 'border-indigo-400 bg-white shadow-sm' : 'border-slate-200 bg-white/50 hover:bg-white',
+                        isDisabled && 'opacity-50 cursor-not-allowed bg-slate-50 hover:bg-slate-50'
+                      )}>
                       <Icon className={cn('w-5 h-5', form.role === r ? 'text-indigo-600' : 'text-slate-400')} />
                       <span className={cn('text-[11px] font-bold', form.role === r ? 'text-indigo-700' : 'text-slate-500')}>{cfg.label}</span>
                     </button>
@@ -209,15 +224,21 @@ function UserFormModal({ initial, onClose }: { initial?: UserRow; onClose: () =>
                 <label className="block text-[11px] font-bold text-indigo-700 uppercase tracking-wider mb-2">
                   Nơi làm việc (Chi nhánh)<span className="text-rose-500 ml-0.5">*</span>
                 </label>
-                <select className={cn(inputCls, "appearance-none cursor-pointer")} value={form.warehouseId} onChange={e => set('warehouseId', e.target.value)}>
+                <select 
+                  className={cn(inputCls, "appearance-none cursor-pointer", isManager() && "bg-slate-50 text-slate-500 cursor-not-allowed")} 
+                  value={form.warehouseId} 
+                  onChange={e => set('warehouseId', e.target.value)}
+                  disabled={isManager()}
+                >
                   <option value="">-- Chọn chi nhánh --</option>
-                  {(availableWarehouses ?? []).filter((w: any) => w.isActive).map((w: any) => (
+                  {(availableWarehouses ?? []).filter((w: any) => w.isActive || w.id === form.warehouseId).map((w: any) => (
                     <option key={w.id} value={w.id}>{w.name}</option>
                   ))}
                 </select>
                 <ChevronDown className="absolute right-4 top-[35px] w-4 h-4 text-slate-400 pointer-events-none" />
                 <p className="text-[10px] text-amber-600 mt-1.5 flex items-center gap-1 font-medium">
-                  <Building2 className="w-3 h-3" />Manager và Thu ngân bắt buộc thuộc về một chi nhánh cụ thể
+                  <Building2 className="w-3 h-3" />
+                  {isManager() ? 'Nhân sự được tự động gán vào chi nhánh của bạn' : 'Manager và Thu ngân bắt buộc thuộc về một chi nhánh cụ thể'}
                 </p>
               </div>
             ) : (
@@ -250,30 +271,27 @@ function UserFormModal({ initial, onClose }: { initial?: UserRow; onClose: () =>
 export default function UsersPage() {
   const qc = useQueryClient();
   
-  // State quản lý bộ lọc
+  const { user, isAdmin } = useAuthStore();
+  
   const [keyword, setKeyword] = useState('');
   const [debouncedKeyword, setDebouncedKeyword] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [warehouseFilter, setWarehouseFilter] = useState('');
   const [showLastLogin, setShowLastLogin] = useState(false);
   
-  // State quản lý Modal
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<UserRow | null>(null);
 
-  // Debounce tìm kiếm
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedKeyword(keyword), 500);
     return () => clearTimeout(timer);
   }, [keyword]);
 
-  // Lấy danh sách chi nhánh cho bộ lọc
   const { data: warehouses } = useQuery({ 
     queryKey: ['warehouses-dict'], 
     queryFn: () => warehouseService.getAll().then(r => r.data.data) 
   });
 
-  // Lấy danh sách Users
   const { data: users, isLoading } = useQuery({
     queryKey: ['users', debouncedKeyword, roleFilter, warehouseFilter],
     queryFn: () => authService.getUsers({
@@ -283,7 +301,6 @@ export default function UsersPage() {
     }).then(r => r.data.data as UserRow[]),
   });
 
-  // Mutation Khóa/Mở khóa
   const toggleActiveMut = useMutation({
     mutationFn: ({ id, activate }: { id: string; activate: boolean }) =>
       activate ? authService.activateUser(id) : authService.deactivateUser(id),
@@ -294,7 +311,6 @@ export default function UsersPage() {
     onError: (e: any) => toast.error(e?.response?.data?.message || 'Lỗi'),
   });
 
-  // Tính toán thống kê KPI
   const stats = useMemo(() => {
     if (!users) return { total: 0, active: 0, admin: 0, manager: 0, cashier: 0 };
     return {
@@ -309,7 +325,6 @@ export default function UsersPage() {
   return (
     <div className="space-y-6 animate-fade-in pb-12 max-w-[1400px] mx-auto relative">
       
-      {/* ── HEADER ── */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight flex items-center gap-2.5">
@@ -323,7 +338,6 @@ export default function UsersPage() {
         </button>
       </div>
 
-      {/* ── STATS CARDS ── */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         {[
           { label: 'Tổng nhân viên', value: stats.total, color: 'text-slate-700' },
@@ -339,10 +353,8 @@ export default function UsersPage() {
         ))}
       </div>
 
-      {/* ── BẢNG DỮ LIỆU & BỘ LỌC ── */}
       <div className="bg-white rounded-3xl shadow-[0_4px_24px_rgb(0,0,0,0.02)] border border-slate-100 overflow-hidden flex flex-col relative min-h-[400px]">
         
-        {/* Toolbar */}
         <div className="p-5 border-b border-slate-100 flex flex-col lg:flex-row justify-between gap-4 bg-white">
           <div className="flex flex-col sm:flex-row gap-4 w-full">
             <div className="relative flex-1 group min-w-[250px]">
@@ -367,20 +379,22 @@ export default function UsersPage() {
               <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
             </div>
 
-            <div className="relative w-full sm:w-56 shrink-0 group">
-              <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 group-focus-within:text-indigo-500 transition-colors" />
-              <select 
-                className="w-full pl-11 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none cursor-pointer"
-                value={warehouseFilter} 
-                onChange={e => setWarehouseFilter(e.target.value)}
-              >
-                <option value="">Mọi chi nhánh</option>
-                {(warehouses ?? []).map((w: any) => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
-            </div>
+            {isAdmin() && (
+              <div className="relative w-full sm:w-56 shrink-0 group">
+                <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 group-focus-within:text-indigo-500 transition-colors" />
+                <select 
+                  className="w-full pl-11 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all appearance-none cursor-pointer"
+                  value={warehouseFilter} 
+                  onChange={e => setWarehouseFilter(e.target.value)}
+                >
+                  <option value="">Mọi chi nhánh</option>
+                  {(warehouses ?? []).map((w: any) => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
+              </div>
+            )}
 
             <button
               onClick={() => setShowLastLogin(v => !v)}
@@ -396,7 +410,6 @@ export default function UsersPage() {
           </div>
         </div>
 
-        {/* Data Grid */}
         <div className="overflow-x-auto relative flex-1">
           {isLoading && <div className="absolute inset-0 bg-white/60 backdrop-blur-sm z-10 flex items-center justify-center"><Spinner size="lg" className="text-indigo-600" /></div>}
           <table className="w-full text-left text-sm text-slate-600">
@@ -464,13 +477,16 @@ export default function UsersPage() {
                         <button onClick={() => { setEditing(u); setShowCreate(true); }} className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors" title="Chỉnh sửa">
                           <Edit3 className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => { if(window.confirm(`Bạn có chắc muốn ${u.isActive ? 'khóa' : 'kích hoạt'} tài khoản này?`)) toggleActiveMut.mutate({ id: u.id, activate: !u.isActive }); }}
-                          className={`p-1.5 rounded-lg transition-colors ${u.isActive ? 'text-rose-500 hover:bg-rose-50' : 'text-emerald-600 hover:bg-emerald-50'}`}
-                          title={u.isActive ? 'Khóa tài khoản' : 'Kích hoạt'}
-                        >
-                          {u.isActive ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
-                        </button>
+                        
+                        {u.id !== user?.id && (
+                          <button
+                            onClick={() => { if(window.confirm(`Bạn có chắc muốn ${u.isActive ? 'khóa' : 'kích hoạt'} tài khoản này?`)) toggleActiveMut.mutate({ id: u.id, activate: !u.isActive }); }}
+                            className={`p-1.5 rounded-lg transition-colors ${u.isActive ? 'text-rose-500 hover:bg-rose-50' : 'text-emerald-600 hover:bg-emerald-50'}`}
+                            title={u.isActive ? 'Khóa tài khoản' : 'Kích hoạt'}
+                          >
+                            {u.isActive ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -481,10 +497,8 @@ export default function UsersPage() {
         </div>
       </div>
 
-      {/* MODAL THÊM/SỬA NHÂN SỰ */}
       {showCreate && <UserFormModal onClose={() => { setShowCreate(false); setEditing(null); }} initial={editing || undefined} />}
       
-      {/* CSS Animation */}
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes scaleIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
         .animate-scale-in { animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }

@@ -1,79 +1,79 @@
-
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { Client, IMessage, StompSubscription } from '@stomp/stompjs';
+import { useAuthStore } from '@/stores/auth.store';
+import { useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 
-// ── Types ────────────────────────────────────────────────────
-export type WsEventType =
-  | 'LOW_STOCK'
-  | 'NEW_ORDER'
-  | 'SHIFT_PENDING_APPROVAL'
-  | 'TRANSFER_ARRIVED';
-
-export interface WsPayload {
-  type: WsEventType;
-  [key: string]: unknown;
+export interface WsNotification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  createdAt: string;
+  payload: any;
 }
 
-type TopicHandler = (payload: WsPayload) => void;
-
-interface SubscriptionConfig {
-  topic: string;
-  handler: TopicHandler;
-}
-
-interface UseWebSocketOptions {
-  warehouseId: string | undefined | null;
-  onMessage: TopicHandler;
-  enabled?: boolean;
-}
-
-// ── URL helpers ──────────────────────────────────────────────
-// Tự động resolve WS URL từ API base URL
-function getWsUrl(): string {
+export function getWsUrl(): string {
   const apiBase = (import.meta as any).env.VITE_API_URL ?? 'http://localhost:8080/api';
-  // Xóa dấu slash ở cuối nếu có để tránh bị lỗi //ws
   const cleanBase = apiBase.replace(/\/$/, '');
-  
-  // Đổi http thành ws và nối thêm /ws vào cuối đường dẫn API
-  // Kết quả: ws://localhost:8080/api/ws
-  return cleanBase
-    .replace(/^http:/, 'ws:')
-    .replace(/^https:/, 'wss:') + '/ws';
+  return cleanBase.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:') + '/ws';
 }
 
-// ── Hook ─────────────────────────────────────────────────────
-/**
- * Hook quản lý kết nối STOMP WebSocket.
- * - Tự động kết nối khi mount, ngắt khi unmount.
- * - Chỉ subscribe topics khi có warehouseId.
- * - Reconnect tự động sau 5 giây nếu mất kết nối.
- */
-export function useWebSocket({ warehouseId, onMessage, enabled = true }: UseWebSocketOptions) {
+export function useGlobalWebSocket() {
   const [isConnected, setIsConnected] = useState(false);
-  const clientRef       = useRef<Client | null>(null);
+  const clientRef = useRef<Client | null>(null);
   const subscriptionsRef = useRef<StompSubscription[]>([]);
   
-  // Dùng ref để handler luôn mới nhất, không gây reconnect
-  const onMessageRef    = useRef<TopicHandler>(onMessage);
-  useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
+  const { user, isAuthenticated } = useAuthStore();
+  const qc = useQueryClient();
 
-  const subscribe = useCallback((client: Client, wid: string) => {
-    // Xoá subscription cũ nếu có
-    subscriptionsRef.current.forEach(s => { try { s.unsubscribe(); } catch { /* ignore */ } });
+  const warehouseId = user?.warehouseId;
+  const isAdmin = user?.role === 'ROLE_ADMIN';
+  const isManager = user?.role === 'ROLE_MANAGER';
+  
+  // ĐÃ THÊM: Chỉ Admin và Manager mới cần nhận thông báo Real-time
+  const canReceiveAlerts = isAdmin || isManager;
+
+  const subscribe = useCallback((client: Client) => {
+    subscriptionsRef.current.forEach(s => { try { s.unsubscribe(); } catch {} });
     subscriptionsRef.current = [];
 
-    const topics: string[] = [
-      `/topic/warehouse/${wid}/low-stock`,
-      `/topic/warehouse/${wid}/new-order`,
-      `/topic/warehouse/${wid}/shift-alert`,
-      `/topic/warehouse/${wid}/transfer`,
-    ];
+    // 1. Kênh cá nhân (Bắt buộc cho mọi user hợp lệ)
+    const topics: string[] = ['/user/queue/notifications'];
+
+    // 2. Kênh tập thể
+    if (isAdmin) {
+      topics.push('/topic/admin/notifications');
+    } else if (warehouseId) {
+      topics.push(`/topic/warehouse/${warehouseId}/notifications`);
+    }
 
     topics.forEach(topic => {
       const sub = client.subscribe(topic, (msg: IMessage) => {
         try {
-          const payload = JSON.parse(msg.body) as WsPayload;
-          onMessageRef.current(payload);
+          const notif = JSON.parse(msg.body) as WsNotification;
+          
+          toast(notif.message, {
+            icon: notif.type === 'LOW_STOCK' ? '⚠️' : notif.type === 'NEW_ORDER' ? '🛒' : '🔔',
+            duration: 5000,
+          });
+
+          qc.setQueryData(['notifications-count'], (old: number = 0) => old + 1);
+          qc.setQueryData(['notifications-unread'], (old: any[] = []) => [notif, ...(old || [])]);
+
+          if (notif.type === 'LOW_STOCK') {
+            qc.invalidateQueries({ queryKey: ['low-stock'] });
+          } else if (notif.type === 'NEW_ORDER') {
+            qc.invalidateQueries({ queryKey: ['orders'] });
+            qc.invalidateQueries({ queryKey: ['revenue'] });
+          } else if (notif.type === 'SHIFT_PENDING_APPROVAL') {
+            qc.invalidateQueries({ queryKey: ['pending-shifts'] });
+          } else if (notif.type === 'TRANSFER_ARRIVED') {
+            qc.invalidateQueries({ queryKey: ['transfers'] });
+          }
+          qc.invalidateQueries({ queryKey: ['dashboard-manager'] });
+          qc.invalidateQueries({ queryKey: ['admin-dashboard'] });
+
         } catch {
           console.warn('[WS] Cannot parse message:', msg.body);
         }
@@ -81,50 +81,29 @@ export function useWebSocket({ warehouseId, onMessage, enabled = true }: UseWebS
       subscriptionsRef.current.push(sub);
     });
 
-    console.info(`[WS] Subscribed to ${topics.length} topics for warehouse ${wid}`);
-  }, []);
+    console.info(`[WS] Đã đăng ký ${topics.length} kênh Real-time`);
+  }, [isAdmin, warehouseId, qc]);
 
   useEffect(() => {
-    if (!enabled) return;
-
-    // ADMIN không có warehouseId → không subscribe warehouse topics
-    // Polling (refetchInterval) đã cover trường hợp này
-    if (!warehouseId) {
-      console.info('[WS] No warehouseId — skipping WebSocket (polling active)');
-      return;
-    }
-
-    const accessToken = localStorage.getItem('accessToken') ?? '';
+    // ĐÃ SỬA: Chặn không cho Cashier mở kết nối WS
+    if (!isAuthenticated || !canReceiveAlerts) return;
 
     const client = new Client({
       brokerURL: getWsUrl(),
-
-      // Truyền JWT qua STOMP header để backend có thể authenticate
-      connectHeaders: {
-        Authorization: accessToken ? `Bearer ${accessToken}` : '',
+      connectHeaders: { Authorization: `Bearer ${localStorage.getItem('accessToken') ?? ''}` },
+      // ĐÃ THÊM: Đảm bảo khi đứt mạng kết nối lại sẽ luôn dùng token mới nhất
+      beforeConnect: () => {
+        const latestToken = localStorage.getItem('accessToken') ?? '';
+        client.connectHeaders = { Authorization: `Bearer ${latestToken}` };
       },
-
-      reconnectDelay: 5000,          // auto-reconnect sau 5 giây
+      reconnectDelay: 5000,
       heartbeatIncoming: 10000,
       heartbeatOutgoing: 10000,
-
       onConnect: () => {
         setIsConnected(true);
-        console.info('[WS] Connected');
-        subscribe(client, warehouseId);
+        subscribe(client);
       },
-
-      onDisconnect: () => {
-        setIsConnected(false);
-        console.info('[WS] Disconnected');
-      },
-
-      onStompError: (frame) => {
-        console.error('[WS] STOMP error:', frame.headers?.message);
-      },
-
-      // Tắt log STOMP spam ở production
-      debug: (import.meta as any).env.DEV ? (str: any) => console.debug('[STOMP]', str) : () => {},
+      onDisconnect: () => setIsConnected(false),
     });
 
     client.activate();
@@ -132,13 +111,12 @@ export function useWebSocket({ warehouseId, onMessage, enabled = true }: UseWebS
 
     return () => {
       setIsConnected(false);
-      subscriptionsRef.current.forEach(s => { try { s.unsubscribe(); } catch { /* ignore */ } });
+      subscriptionsRef.current.forEach(s => { try { s.unsubscribe(); } catch {} });
       subscriptionsRef.current = [];
       client.deactivate();
       clientRef.current = null;
-      console.info('[WS] Cleanup — connection closed');
     };
-  }, [warehouseId, enabled, subscribe]);
+  }, [isAuthenticated, canReceiveAlerts, subscribe]);
 
   return { isConnected };
 }

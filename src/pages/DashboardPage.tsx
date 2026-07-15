@@ -21,9 +21,8 @@ import { aiService } from '@/services/ai.service';
 import { useAuthStore } from '@/stores/auth.store';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
 import { PageLoader } from '@/components/ui';
-import { useDashboardWebSocket } from '@/hooks/useDashboardWebSocket';
 import { AlertBranchesWidget, BranchRevenueWidget } from '@/components/dashboard/AdminBranchWidget'; 
-import CashierDashboardView from '@/components/dashboard/CashierDashboardView'; // [FIX 1] Import giao diện Cashier
+import CashierDashboardView from '@/components/dashboard/CashierDashboardView';
 
 type TimeFilter = '7d' | '30d' | '3m' | 'thisYear';
 
@@ -214,13 +213,9 @@ export default function DashboardPage() {
   const qc = useQueryClient();
   const isStaff = isCashier();
 
-  // State quản lý Chatbot
   const [showAI, setShowAI] = useState(false);
-
-  // 1. STATES BỘ LỌC TÍCH HỢP
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('30d');
   
-  // KHỞI TẠO STATE AN TOÀN CHO MANAGER
   const [warehouseId, setWarehouseId] = useState<string>(() => {
     if (isAdmin()) return '';
     return user?.warehouseId || '';
@@ -233,74 +228,63 @@ export default function DashboardPage() {
     'thisYear': { from: startOfYear(new Date()).toISOString(),  to: new Date().toISOString(), period: 'month' },
   }[timeFilter];
 
-  // 2. WEBSOCKET REAL-TIME
-  const { isConnected: wsConnected } = useDashboardWebSocket({
-    warehouseId: user?.warehouseId,
-    enabled: !isStaff,
-  });
+  const wsConnected = true; // Giả lập UI luôn sáng đèn Live vì Global Web Socket đã lo
 
   const queryWarehouseId = warehouseId || undefined;
 
-  // 3. QUERIES DỮ LIỆU
   const { data: warehouses } = useQuery({
     queryKey: ['warehouses-dict'],
-    queryFn: () => warehouseService.getAll().then(r => r.data.data),
+    queryFn: () => warehouseService.getAll().then((r: any) => r.data.data),
     enabled: isAdmin(),
   });
 
-  // [FIX 2] Tận dụng API Manager Dashboard
   const { data: managerDashboard } = useQuery({
     queryKey: ['dashboard-manager'],
-    queryFn: () => dashboardService.getManagerDashboard().then(r => r.data.data),
+    queryFn: () => dashboardService.getManagerDashboard().then((r: any) => r.data.data),
     enabled: isManager(),
     refetchInterval: 60_000,
   });
 
-  // [FIX 3] Admin Dashboard
   const { data: adminDashboard } = useQuery({
     queryKey: ['admin-dashboard'],
-    queryFn: () => dashboardService.getAdminDashboard().then(r => r.data.data),
+    queryFn: () => dashboardService.getAdminDashboard().then((r: any) => r.data.data),
     enabled: isAdmin(),
     refetchInterval: 60_000,
   });
 
-  // Lợi nhuận gộp & Doanh thu (Dùng cho biểu đồ)
   const { data: revenueData, isLoading: loadingRevenue } = useQuery({
     queryKey: ['revenue', timeFilter, queryWarehouseId],
-    queryFn: () => reportService.getRevenue({ ...dateRange, warehouseId: queryWarehouseId }).then(r => r.data.data),
+    queryFn: () => reportService.getRevenue({ ...dateRange, warehouseId: queryWarehouseId }).then((r: any) => r.data.data),
     enabled: !isStaff,
   });
 
-  // Hàng tồn đọng (Dùng cho bảng)
   const { data: deadStockList } = useQuery({
     queryKey: ['dead-stock', queryWarehouseId],
-    queryFn: () => reportService.getDeadStock({ days: 90, warehouseId: queryWarehouseId }).then(r => Array.isArray(r.data?.data) ? r.data.data : []),
+    queryFn: () => reportService.getDeadStock({ days: 90, warehouseId: queryWarehouseId }).then((r: any) => Array.isArray(r.data?.data) ? r.data.data : []),
     enabled: !isStaff,
   });
 
-  // Top sản phẩm (Dùng cho bảng)
   const { data: topProducts } = useQuery({
     queryKey: ['top-products', timeFilter, queryWarehouseId],
-    queryFn: () => reportService.getTopProducts({ ...dateRange, limit: 10, warehouseId: queryWarehouseId }).then(r => r.data.data),
+    queryFn: () => reportService.getTopProducts({ ...dateRange, limit: 10, warehouseId: queryWarehouseId }).then((r: any) => r.data.data),
     enabled: !isStaff,
   });
 
-  // Các Widget phụ: Sổ quỹ, Ca chờ duyệt, Công nợ, Audit Logs
   const { data: cashBalance } = useQuery({
     queryKey: ['cash-balance', queryWarehouseId],
-    queryFn: () => financeService.getCashbookBalance(queryWarehouseId).then(r => r.data.data),
+    queryFn: () => financeService.getCashbookBalance(queryWarehouseId).then((r: any) => r.data.data),
     enabled: !isStaff,
   });
 
   const { data: pendingShifts } = useQuery({
     queryKey: ['pending-shifts', queryWarehouseId],
-    queryFn: () => posService.getPendingShifts().then(r => r.data.data),
+    queryFn: () => posService.getPendingShifts().then((r: any) => r.data.data),
     enabled: !isStaff,
   });
 
   const { data: supplierDebts } = useQuery({
     queryKey: ['supplier-debts', queryWarehouseId],
-    queryFn: () => financeService.getOutstandingDebts(queryWarehouseId).then(r => {
+    queryFn: () => financeService.getOutstandingDebts(queryWarehouseId).then((r: any) => {
         const raw = r.data?.data ?? [];
         return [...raw].sort((a: any, b: any) => b.remainingAmount - a.remainingAmount).slice(0, 5);
       }),
@@ -309,7 +293,7 @@ export default function DashboardPage() {
 
   const { data: auditLogs } = useQuery({
     queryKey: ['audit-logs'],
-    queryFn: () => adminService.getAuditLogs({ size: 10 }).then(r => r.data.data.content),
+    queryFn: () => adminService.getAuditLogs({ size: 10 }).then((r: any) => r.data.data.content),
     enabled: !isStaff && isAdmin(),
   });
 
@@ -496,7 +480,7 @@ export default function DashboardPage() {
                     {chartData.length === 0 ? (
                       <tr><td colSpan={3} className="text-center py-12 text-slate-400 font-medium">Không có dữ liệu</td></tr>
                     ) : (
-                      chartData.slice().reverse().map((row, idx) => (
+                      chartData.slice().reverse().map((row: any, idx: number) => (
                         <tr key={idx} className="hover:bg-slate-50/80 transition-colors group">
                           <td className="px-4 py-3.5 text-slate-700 font-semibold group-hover:text-indigo-600 transition-colors">{row.name}</td>
                           <td className="px-4 py-3.5 text-right text-indigo-600 font-black tracking-tight">{formatCurrency(row.revenue)}</td>

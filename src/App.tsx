@@ -23,7 +23,6 @@ import AuditLogsPage from '@/pages/AuditLogsPage';
 import UsersPage from '@/pages/UsersPage';                         
 import WarehousesPage from '@/pages/WarehousesPage';               
 
-// [MỚI THÊM] Import 2 trang Quên mật khẩu
 import ForgotPasswordPage from '@/pages/ForgotPasswordPage';
 import ResetPasswordPage from '@/pages/ResetPasswordPage';
 
@@ -49,7 +48,6 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
         
-        {/* [MỚI THÊM] 2 Route đặt ngoài Guard để click từ Email vẫn vào được */}
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password"  element={<ResetPasswordPage />} />
 
@@ -74,11 +72,11 @@ export default function App() {
           <Route path="categories"      element={<RoleRoute roles={MANAGER_ADMIN}><CategoriesPage /></RoleRoute>} />
           <Route path="stock-takes"     element={<RoleRoute roles={MANAGER_ADMIN}><StockTakePage /></RoleRoute>} />
           <Route path="promotions"      element={<RoleRoute roles={MANAGER_ADMIN}><PromotionsPage /></RoleRoute>} />
+          <Route path="users"           element={<RoleRoute roles={MANAGER_ADMIN}><UsersPage /></RoleRoute>} />
 
           {/* Admin only — Quyền giám sát & quản trị hệ thống */}
           <Route path="cod-reconciliation" element={<RoleRoute roles={ADMIN_ONLY}><CodReconciliationPage /></RoleRoute>} />
           <Route path="audit-logs"         element={<RoleRoute roles={ADMIN_ONLY}><AuditLogsPage /></RoleRoute>} />
-          <Route path="users"              element={<RoleRoute roles={ADMIN_ONLY}><UsersPage /></RoleRoute>} />
           <Route path="warehouses"         element={<RoleRoute roles={ADMIN_ONLY}><WarehousesPage /></RoleRoute>} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

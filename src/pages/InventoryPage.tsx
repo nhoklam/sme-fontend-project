@@ -5,7 +5,6 @@ import { AlertTriangle, Package, Search, Filter, History, SlidersHorizontal, Map
 import { 
   PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer
 } from 'recharts';
-import { Client } from '@stomp/stompjs';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 
@@ -139,7 +138,6 @@ export default function InventoryPage() {
   const [isExporting, setIsExporting] = useState(false);
 
   const qc = useQueryClient();
-  const stompClientRef = useRef<Client | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
 
   const { data: warehouses } = useQuery({
@@ -148,7 +146,7 @@ export default function InventoryPage() {
     enabled: isAdmin(),
   });
 
-  // ĐÃ SỬA: Tự động chọn kho đầu tiên cho Admin nếu chưa chọn kho nào
+  // Tự động chọn kho đầu tiên cho Admin nếu chưa chọn kho nào
   useEffect(() => {
     if (isAdmin() && warehouses && warehouses.length > 0 && !selectedWarehouseId) {
       setSelectedWarehouseId(warehouses[0].id);
@@ -197,7 +195,7 @@ export default function InventoryPage() {
       page,
       size: PAGE_SIZE
     }).then(r => r.data.data),
-    // ĐÃ SỬA: Bắt buộc phải có selectedWarehouseId mới được gọi API
+    // Bắt buộc phải có selectedWarehouseId mới được gọi API
     enabled: !!selectedWarehouseId, 
   });
 
@@ -206,43 +204,6 @@ export default function InventoryPage() {
     queryFn: () => inventoryService.getLowStock(selectedWarehouseId).then((r: any) => r.data.data),
     enabled: isAdmin() ? true : !!selectedWarehouseId,
   });
-
-  useEffect(() => {
-    const token = localStorage.getItem('accessToken');
-    if (!token || !selectedWarehouseId) return;
-    if (stompClientRef.current && stompClientRef.current.active) return;
-
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsHost = window.location.hostname;
-    const brokerURL = (import.meta as any).env.VITE_WS_URL || `${wsProtocol}//${wsHost}:8080/api/ws`;
-
-    const client = new Client({
-      brokerURL: brokerURL,
-      connectHeaders: { Authorization: `Bearer ${token}` },
-      reconnectDelay: 5000,
-      onConnect: () => {
-        const topic = `/topic/warehouse/${selectedWarehouseId}/low-stock`;
-        client.subscribe(topic, (message) => {
-          const payload = JSON.parse(message.body);
-          toast.error(`⚠️ Cảnh báo: Sản phẩm "${payload.productName || 'Không xác định'}" vừa rớt xuống dưới mức an toàn! (Còn ${payload.quantity} SP)`, {
-            duration: 5000,
-          });
-          qc.refetchQueries({ queryKey: ['inventory-search'] });
-          qc.refetchQueries({ queryKey: ['low-stock'] });
-        });
-      }
-    });
-
-    stompClientRef.current = client;
-    client.activate();
-
-    return () => {
-      if (stompClientRef.current) {
-        stompClientRef.current.deactivate();
-        stompClientRef.current = null;
-      }
-    };
-  }, [selectedWarehouseId, qc]);
 
   const handleExportExcel = async () => {
     try {
@@ -439,7 +400,6 @@ export default function InventoryPage() {
                    value={selectedWarehouseId} 
                    onChange={(e) => { setSelectedWarehouseId(e.target.value); setPage(0); }}
                  >
-                   {/* ĐÃ SỬA: Không cho phép chọn rỗng */}
                    <option value="" disabled>-- Chọn chi nhánh --</option>
                    {warehouses?.map((w: any) => <option key={w.id} value={w.id}>{w.name}</option>)}
                  </select>
@@ -457,7 +417,6 @@ export default function InventoryPage() {
               <tr>
                 <th className="px-6 py-5">Sản phẩm</th>
                 <th className="px-6 py-5">Mã Barcode / SKU</th>
-                {/* ĐÃ SỬA: Đổi tên cột */}
                 <th className="px-6 py-5 text-center" title="Tồn kho vật lý tại chi nhánh đang chọn">Tồn kho thực tế</th>
                 <th className="px-6 py-5 text-center text-amber-600" title="Hàng khách đã đặt Online nhưng chưa giao">Giữ chỗ</th>
                 <th className="px-6 py-5 text-center text-blue-600" title="Hàng đang trên đường chuyển kho">Đang về</th>

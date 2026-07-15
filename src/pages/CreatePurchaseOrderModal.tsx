@@ -1,8 +1,8 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { X, Plus, Trash2, Package } from 'lucide-react';
+import { X, Plus, Trash2, Package, Upload, Download } from 'lucide-react';
+import * as XLSX from 'xlsx'; // Import thư viện xử lý Excel
 import { supplierService } from '../services/supplier.service';
 import { warehouseService } from '../services/warehouse.service';
 import { productService } from '../services/product.service';
@@ -20,6 +20,7 @@ interface Props {
 export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
   const { user, isAdmin } = useAuthStore();
   const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [form, setForm] = useState({
     supplierId: '',
@@ -28,6 +29,7 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
   });
 
   const [items, setItems] = useState<Array<{ productId: string; quantity: number; importPrice: number | string }>>([]);
+  const [isImporting, setIsImporting] = useState(false);
 
   const { data: suppliers } = useQuery({
     queryKey: ['suppliers-po'],
@@ -40,11 +42,11 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
     enabled: isAdmin(), 
   });
 
-  // ĐÃ SỬA (BƯỚC 2): CHỈ FETCH KHI CHỌN NCC
+  // CHỈ FETCH KHI CHỌN NCC
   const { data: filteredProducts, isLoading: loadingProducts } = useQuery({
     queryKey: ['products-po', form.supplierId],
     queryFn: () => productService.getProducts({ supplierId: form.supplierId, size: 1000 }).then((r: any) => r.data.data.content),
-    enabled: !!form.supplierId, // Chỉ chạy khi supplierId có giá trị
+    enabled: !!form.supplierId, 
   });
 
   useEffect(() => {
@@ -56,7 +58,7 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
       supplierId: form.supplierId,
       warehouseId: form.warehouseId,
       note: form.note,
-      items: items.map(i => ({ ...i, importPrice: Number(i.importPrice) })) // Ép kiểu số
+      items: items.map(i => ({ ...i, importPrice: Number(i.importPrice) })) 
     }),
     onSuccess: () => {
       toast.success('Tạo phiếu nhập kho thành công! Phiếu đang chờ duyệt.');
@@ -72,16 +74,29 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
     const newItems = [...items];
     
     if (field === 'productId') {
-      // ĐÃ THÊM (BƯỚC 3): CHẶN TRÙNG LẶP SẢN PHẨM TRONG GIỎ
       const isExist = newItems.some((item, i) => i !== index && item.productId === value);
       if (isExist && value !== '') {
         toast.error("Sản phẩm này đã có trong danh sách nhập!");
         return;
       }
+
+      let autoImportPrice: number | string = '';
+
+      if (value !== '') {
+        const selectedProduct = filteredProducts?.find((p: any) => p.id === value);
+        if (selectedProduct) {
+          const basePrice = selectedProduct.wholesalePrice || selectedProduct.retailPrice || 0;
+          if (basePrice > 0) {
+            const calculatedPrice = basePrice * 0.9;
+            autoImportPrice = Math.round(calculatedPrice / 1000) * 1000;
+          }
+        }
+      }
+
       newItems[index] = { 
         ...newItems[index], 
         productId: value,
-        importPrice: '' // BẮT BUỘC NGƯỜI DÙNG PHẢI TỰ GÕ GIÁ
+        importPrice: autoImportPrice 
       };
     } else {
       newItems[index] = { ...newItems[index], [field]: value };
@@ -92,6 +107,84 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
 
   const handleRemoveItem = (index: number) => setItems(items.filter((_, i) => i !== index));
 
+  // ============================================================================
+  // TÍNH NĂNG IMPORT EXCEL
+  // ============================================================================
+  const handleDownloadTemplate = () => {
+    const template = [
+      { 'Mã SP (Barcode/SKU)': '8935235228115', 'Số lượng': 20, 'Giá nhập (Bỏ trống để tự tính)': 68000 },
+      { 'Mã SP (Barcode/SKU)': '8936066684781', 'Số lượng': 15, 'Giá nhập (Bỏ trống để tự tính)': '' }
+    ];
+    const ws = XLSX.utils.json_to_sheet(template);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Template_NhapKho');
+    XLSX.writeFile(wb, 'File_Mau_Nhap_Kho.xlsx');
+  };
+
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    const reader = new FileReader();
+
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+
+        const newItems = [...items];
+        let successCount = 0;
+        let errorCount = 0;
+
+        data.forEach((row: any) => {
+          // Đọc các cột có thể có trong file Excel
+          const code = String(row['Mã SP (Barcode/SKU)'] || row['Mã SP'] || row['Barcode'] || row['SKU'] || '').trim();
+          const qty = Number(row['Số lượng'] || row['SL'] || 0);
+          const price = Number(row['Giá nhập (Bỏ trống để tự tính)'] || row['Giá nhập'] || 0);
+
+          if (!code || qty <= 0) { errorCount++; return; }
+
+          // Tìm sản phẩm trong danh sách của Nhà cung cấp hiện tại
+          const product = filteredProducts?.find((p: any) => p.isbnBarcode === code || p.sku === code);
+          if (!product) { errorCount++; return; }
+
+          // Kiểm tra xem đã có trong giỏ chưa
+          if (newItems.some(i => i.productId === product.id)) {
+            errorCount++; return;
+          }
+
+          // Tính giá nhập nếu trong Excel để trống
+          let finalPrice = price;
+          if (finalPrice <= 0) {
+            const basePrice = product.wholesalePrice || product.retailPrice || 0;
+            finalPrice = Math.round((basePrice * 0.9) / 1000) * 1000;
+          }
+
+          newItems.push({
+            productId: product.id,
+            quantity: qty,
+            importPrice: finalPrice
+          });
+          successCount++;
+        });
+
+        setItems(newItems);
+        if (successCount > 0) toast.success(`Đã thêm thành công ${successCount} sản phẩm từ file Excel.`);
+        if (errorCount > 0) toast.error(`Bỏ qua ${errorCount} dòng không hợp lệ hoặc bị trùng lặp.`);
+
+      } catch (err) {
+        toast.error('Lỗi đọc file Excel! Vui lòng dùng file mẫu.');
+      } finally {
+        setIsImporting(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+  // ============================================================================
+
   const totalAmount = items.reduce((sum, item) => sum + (item.quantity * (Number(item.importPrice) || 0)), 0);
 
   const handleSubmit = () => {
@@ -101,7 +194,7 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
     }
     const hasZeroPrice = items.some(item => Number(item.importPrice) <= 0);
     if (hasZeroPrice) {
-      toast.error("Vui lòng nhập giá nhập thực tế (Lớn hơn 0) cho tất cả sản phẩm!");
+      toast.error("Sản phẩm chưa có giá nhập hợp lệ (Lớn hơn 0)!");
       return;
     }
     createMut.mutate();
@@ -111,7 +204,7 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh] animate-slide-up">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[90vh] animate-slide-up">
         
         <div className="flex justify-between items-center p-5 border-b shrink-0 bg-blue-600 text-white rounded-t-2xl">
           <h2 className="text-xl font-bold">Tạo Phiếu Nhập Kho Mới</h2>
@@ -170,14 +263,32 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
           </div>
 
           <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm space-y-3">
-            <div className="flex justify-between items-center border-b pb-2">
+            <div className="flex justify-between items-center border-b pb-3">
               <h3 className="font-semibold text-gray-800 flex items-center gap-2">
                 <Package className="w-5 h-5 text-primary-600" /> Danh sách hàng nhập
               </h3>
+              
+              {/* CỤM NÚT IMPORT EXCEL VÀ THÊM TAY */}
               {form.supplierId && (filteredProducts || []).length > 0 && (
-                <button type="button" onClick={handleAddItem} className="btn-secondary btn-sm">
-                  <Plus className="w-4 h-4 mr-1" /> Thêm sản phẩm
-                </button>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={handleDownloadTemplate} className="btn-secondary btn-sm text-gray-600">
+                    <Download className="w-4 h-4 mr-1" /> Tải file mẫu
+                  </button>
+                  
+                  <button 
+                    type="button" 
+                    onClick={() => fileInputRef.current?.click()} 
+                    disabled={isImporting}
+                    className="btn-secondary btn-sm text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                  >
+                    {isImporting ? <Spinner size="sm" /> : <Upload className="w-4 h-4 mr-1" />} Import Excel
+                  </button>
+                  <input type="file" ref={fileInputRef} onChange={handleImportExcel} accept=".xlsx, .xls" className="hidden" />
+
+                  <button type="button" onClick={handleAddItem} className="btn-secondary btn-sm">
+                    <Plus className="w-4 h-4 mr-1" /> Thêm tay
+                  </button>
+                </div>
               )}
             </div>
 
@@ -204,8 +315,9 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
                 </button>
               </div>
             ) : items.length === 0 ? (
-              <div className="text-center py-8 text-gray-400 text-sm bg-gray-50 rounded-lg border border-dashed border-gray-200">
-                Chưa có sản phẩm nào trong phiếu. Bấm "Thêm sản phẩm" để bắt đầu.
+              <div className="text-center py-10 text-gray-500 text-sm bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                <p className="mb-2">Chưa có sản phẩm nào trong phiếu.</p>
+                <p>Bạn có thể <strong className="text-indigo-600">Import từ Excel</strong> để nhập hàng loạt hoặc <strong className="text-gray-700">Thêm tay</strong> từng món.</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -266,7 +378,7 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
               <div className="flex justify-end pt-4 border-t mt-4">
                 <div className="text-right">
                   <p className="text-sm text-gray-500">Tổng tiền dự kiến</p>
-                  <p className="text-2xl font-bold text-primary-600">{formatCurrency(totalAmount)}</p>
+                  <p className="text-3xl font-black text-primary-600">{formatCurrency(totalAmount)}</p>
                 </div>
               </div>
             )}
@@ -278,7 +390,7 @@ export function CreatePurchaseOrderModal({ onClose, onSaved }: Props) {
           <button 
             onClick={handleSubmit} 
             disabled={!isValid || createMut.isPending}
-            className="btn-primary px-6"
+            className="btn-primary px-8 text-base"
           >
             {createMut.isPending ? <Spinner size="sm" /> : 'Xác nhận tạo phiếu'}
           </button>

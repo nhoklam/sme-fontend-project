@@ -1,6 +1,6 @@
 
 import api from '@/lib/axios';
-import type { ApiResponse, PageResponse, ShiftResponse, OpenShiftRequest, CloseShiftRequest, CheckoutRequest, InvoiceResponse } from '@/types';
+import type { ApiResponse, PageResponse, ShiftResponse, OpenShiftRequest, CloseShiftRequest, CheckoutRequest, InvoiceResponse, PaymentQrResponse } from '@/types';
 
 export const posService = {
   // ── Shifts ──────────────────────────────────────────────────
@@ -38,4 +38,14 @@ export const posService = {
 
   refund: (data: { originalInvoiceId: string; shiftId: string; items: { productId: string; quantity: number }[]; returnDestination: string; note: string; }) =>
     api.post<ApiResponse<InvoiceResponse>>('/pos/refund', data),
+
+  // ── Thanh toán QR payOS ─────────────────────────────────────
+  createPaymentQr: (data: Omit<CheckoutRequest, 'payments'>) =>
+    api.post<ApiResponse<PaymentQrResponse>>('/pos/payments/qr', data),
+
+  getPaymentStatus: (code: string) =>
+    api.get<ApiResponse<PaymentQrResponse>>(`/pos/payments/${code}/status`),
+
+  cancelPaymentQr: (code: string) =>
+    api.post<ApiResponse<void>>(`/pos/payments/${code}/cancel`),
 };

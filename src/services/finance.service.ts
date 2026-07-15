@@ -1,6 +1,14 @@
-
 import api from '@/lib/axios';
-import type { ApiResponse, CashbookTransaction, CreateCashbookEntryRequest, SupplierDebt, PaySupplierDebtRequest, CodReconciliationResult } from '@/types';
+import type { 
+  ApiResponse, 
+  CashbookTransaction, 
+  CreateCashbookEntryRequest, 
+  SupplierDebt, 
+  PaySupplierDebtRequest, 
+  CodReconciliationResult,
+  PageResponse,     // Đã thêm
+  OrderResponse     // Đã thêm
+} from '@/types';
 
 export const financeService = {
   getCashbookBalance: (warehouseId?: string) =>
@@ -31,6 +39,10 @@ export const financeService = {
 
   paySupplierDebt: (data: PaySupplierDebtRequest) =>
     api.post<ApiResponse<SupplierDebt>>('/finance/supplier-debts/pay', data),
+
+  // ĐÃ SỬA: Thêm hàm getPendingCod để gọi API lọc đơn từ DB
+  getPendingCod: (params: { warehouseId?: string; from?: string; to?: string; keyword?: string; page?: number; size?: number }) =>
+    api.get<ApiResponse<PageResponse<OrderResponse>>>('/finance/cod-reconciliation/pending', { params }),
 
   reconcileCOD: (items: any[], warehouseId: string) =>
     api.post<ApiResponse<CodReconciliationResult>>('/finance/cod-reconciliation', items, {

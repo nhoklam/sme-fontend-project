@@ -1,4 +1,3 @@
-
 // ─────────────────────────────────────────────────────────────
 // STANDARD RESPONSE WRAPPERS
 // ─────────────────────────────────────────────────────────────
@@ -122,8 +121,8 @@ export interface Supplier {
   notes?: string;
   createdAt: string;
   updatedAt?: string;
-  createdBy?: string; // ĐÃ THÊM
-  updatedBy?: string; // ĐÃ THÊM
+  createdBy?: string; 
+  updatedBy?: string; 
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -301,8 +300,8 @@ export interface InternalTransfer {
   receivedAt?: string;
   items: TransferItem[];
   createdAt: string;
-  referenceOrderId?: string; // Đã thêm
-  transferReason?: string;   // Đã thêm
+  referenceOrderId?: string;
+  transferReason?: string;
 }
 
 export type TransferStatus = 'DRAFT' | 'DISPATCHED' | 'RECEIVED' | 'CANCELLED';
@@ -402,7 +401,7 @@ export interface CheckoutRequest {
     reference?: string;
   }>;
   pointsToUse?: number;
-  promotionCode?: string; // [Step 6] Mã khuyến mãi được áp dụng khi thanh toán
+  promotionCode?: string; 
   note?: string;
 }
 
@@ -515,9 +514,9 @@ export interface SupplierDebt {
   id: string;
   supplierId: string;
   purchaseOrderId: string;
-  purchaseOrderCode?: string; // Bổ sung
-  warehouseId?: string;       // Bổ sung
-  warehouseName?: string;     // Bổ sung
+  purchaseOrderCode?: string; 
+  warehouseId?: string;       
+  warehouseName?: string;     
   totalDebt: number;
   paidAmount: number;
   remainingAmount: number;
@@ -533,12 +532,24 @@ export interface PaySupplierDebtRequest {
   note?: string;
 }
 
+// ĐÃ THÊM: Định nghĩa chi tiết kết quả trả về của Đối soát COD
+export interface CodReconciliationItemResult {
+  orderCode: string;
+  customerName: string;
+  amountReceived: number;
+  shippingFee: number;
+  shippingProvider: string;
+  netAmount: number;
+}
+
 export interface CodReconciliationResult {
   matched: number;
   notFound: number;
   totalReceived: number;
   totalShippingFee: number;
   netAmount: number;
+  items: CodReconciliationItemResult[];
+  notFoundCodes: string[];
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -592,6 +603,7 @@ export interface CartPayment {
   amount: number;
   reference?: string;
 }
+
 // ─────────────────────────────────────────────────────────────
 // AUDIT LOGS (Nhật ký hệ thống)
 // ─────────────────────────────────────────────────────────────
@@ -602,4 +614,16 @@ export interface AuditLogResponse {
   changedBy: string;
   changedAt: string;
   revision: number;
+}
+// ─────────────────────────────────────────────────────────────
+// PAYOS PAYMENT
+// ─────────────────────────────────────────────────────────────
+export interface PaymentQrResponse {
+  code: string;
+  qrCode: string;
+  checkoutUrl: string;
+  amount: number;
+  expiredAt: string;
+  status: 'PENDING' | 'PAID' | 'CANCELLED' | 'EXPIRED';
+  reference?: string;
 }
