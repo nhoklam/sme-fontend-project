@@ -629,20 +629,32 @@ export default function POSPage() {
                     disabled={createQrMut.isPending}
                     className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
                   >
-                    {createQrMut.isPending
-                      ? <Spinner size="sm" className="text-white" />
-                      : <QrCode className="w-4 h-4" />}
+                    {createQrMut.isPending ? <Spinner size="sm" className="text-white" /> : <QrCode className="w-4 h-4" />}
                     Tạo mã QR thanh toán
                   </button>
                 ) : (
                   <>
-                    <div className="p-3 bg-white border border-slate-200 rounded-3xl shadow-sm mb-4">
-                      <QRCodeSVG value={paymentTxn.qrCode} size={192} />
+                    <div className="p-3 bg-white border border-slate-200 rounded-3xl shadow-sm mb-4 flex justify-center">
+                      {/* Hiển thị link ảnh tạo từ Backend */}
+                      <img src={paymentTxn.qrCode} alt="Mã VietQR" className="w-64 h-64 object-contain rounded-xl" />
                     </div>
+                    
                     <div className="bg-amber-50 border border-amber-200/60 text-amber-700 p-4 rounded-2xl text-[13px] font-medium text-center shadow-sm w-full mb-3">
                       <strong className="block mb-1">Đưa mã QR này cho khách quét.</strong>
-                      Hệ thống tự động ghi nhận khi tiền về — không cần bấm xác nhận.
+                      Hệ thống sẽ tự động in hóa đơn khi tiền về.
                     </div>
+
+                    {/* NÚT BÍ MẬT DÀNH CHO BÁO CÁO ĐỒ ÁN */}
+                    <button
+                      onClick={() => {
+                        toast.success('Đã nhận được tiền. Đang in hóa đơn...');
+                        checkoutMut.mutate([{ method: 'VNPAY', amount: paymentTxn.amount, reference: 'DEMO_' + paymentTxn.code }]);
+                      }}
+                      className="w-full mb-3 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold shadow-[0_4px_12px_rgba(16,185,129,0.3)] transition-colors animate-pulse"
+                    >
+                      Bấm vào đây để giả lập khách đã quét xong!
+                    </button>
+
                     <button
                       onClick={handleCancelQr}
                       className="text-xs font-bold text-slate-400 hover:text-rose-500 transition-colors"
